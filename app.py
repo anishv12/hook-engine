@@ -1,5 +1,6 @@
 """Hook Engine (Streamlit): prospect in, researched and reviewed outreach draft out. Nothing is ever sent."""
 import csv
+import html
 import io
 import os
 import sys
@@ -40,7 +41,6 @@ STATUS = {
     "error": ("❌ Error", "error"),
     "running": ("⏳ Running", "info"),
 }
-ICON = {"pending": "○", "running": "⏳", "done": "✅", "warn": "⚠️", "paused": "⏸", "error": "❌", "skipped": "–"}
 
 # ---------------------------------------------------------------- access gate
 code = os.environ.get("ACCESS_CODE")
@@ -57,27 +57,72 @@ if code and not st.session_state.get("authed"):
 
 
 # ---------------------------------------------------------------- helpers
-def render_progress(run, ph):
-    lines = []
-    for sid, label in E.STAGES:
-        s = run["stages"][sid]
-        ms = f" · {s['ms'] / 1000:.1f}s" if s.get("ms") else ""
-        lines.append(f"{ICON.get(s['status'], '○')} **{label}**{ms}")
-    ev = (run["stages"]["research"].get("data") or {}).get("events") or []
-    tail = "\n".join(f"- `{e['kind']}` {e['text']}" for e in ev[-6:])
-    err = next((f"\n\n:red[{s['error']}]" for s in run["stages"].values() if s.get("error")), "")
-    ph.markdown("  \n".join(lines) + ("\n\n**Research log**\n" + tail if tail else "") + err)
+STEP_CSS = (
+    "<style>"
+    ".he-wrap{margin:.25rem 0 1rem}"
+    ".he-track{position:relative;height:8px;border-radius:99px;background:rgba(128,128,128,.25);overflow:hidden}"
+    ".he-fill{position:absolute;left:0;top:0;bottom:0;border-radius:99px;background:linear-gradient(90deg,#16a34a,#22c55e);transition:width .6s ease}"
+    ".he-creep{position:absolute;top:0;bottom:0;width:0;border-radius:99px;background:linear-gradient(90deg,#2563eb,#60a5fa);animation:he-creep 70s cubic-bezier(.2,.6,.3,1) forwards}"
+    "@keyframes he-creep{to{width:var(--seg)}}"
+    ".he-steps{display:flex;list-style:none;margin:.7rem 0 0;padding:0}"
+    ".he-s{flex:1 1 0;min-width:0;text-align:center;font-size:.8rem;line-height:1.25;padding:0 2px}"
+    ".he-dot{display:inline-flex;align-items:center;justify-content:center;width:2rem;height:2rem;border-radius:50%;border:2px solid rgba(128,128,128,.5);font-weight:600;font-size:.85rem;margin-bottom:.3rem}"
+    ".he-s.pending{opacity:.55}"
+    ".he-s.done .he-dot{background:#16a34a;border-color:#16a34a;color:#fff}"
+    ".he-s.warn .he-dot{background:#d97706;border-color:#d97706;color:#fff}"
+    ".he-s.error .he-dot{background:#dc2626;border-color:#dc2626;color:#fff}"
+    ".he-s.running .he-dot{border-color:#2563eb;color:#2563eb;animation:he-pulse 1.2s infinite}"
+    ".he-s.paused .he-dot{border-color:#2563eb;background:rgba(37,99,235,.15);color:#2563eb}"
+    ".he-s .t{display:block;opacity:.6;font-size:.72rem}"
+    "@keyframes he-pulse{0%,100%{box-shadow:0 0 0 0 rgba(37,99,235,.5)}50%{box-shadow:0 0 0 6px rgba(37,99,235,0)}}"
+    ".he-log{margin-top:.6rem;font-size:.8rem;opacity:.8;font-family:ui-monospace,monospace}"
+    ".he-err{margin-top:.6rem;color:#dc2626;font-size:.85rem}"
+    "@media(max-width:640px){.he-steps{flex-wrap:wrap;row-gap:.7rem}.he-s{flex:1 1 25%}}"
+    "</style>"
+)
+
+
+def render_progress(run, ph, tail=True):
+    """A linear 8-step track. The bar fills as stages finish and creeps forward while one is running."""
+    stages = [(sid, label, run["stages"][sid]) for sid, label in E.STAGES]
+    n = len(stages)
+
+    def finished(sid, st_):
+        return st_["status"] in ("done", "warn", "skipped") or (sid == "review" and st_["status"] == "paused")
+    done = sum(finished(sid, st_) for sid, _, st_ in stages)
+    running = [st_ for _, _, st_ in stages if st_["status"] == "running"]
+    pct = done / n * 100
+    creep = ""
+    if running:
+        t0 = min(st_.get("_t0") or time.time() for st_ in running)
+        creep = f'<div class="he-creep" style="left:{pct:.2f}%;--seg:{len(running) / n * 92:.2f}%;animation-delay:-{max(time.time() - t0, 0):.1f}s"></div>'
+    lis = []
+    for i, (sid, label, st_) in enumerate(stages):
+        status = st_["status"]
+        cls = "done" if finished(sid, st_) and status != "warn" else status
+        if sid == "review" and status == "paused":
+            cls, dot, sub = "done", "✓", "Your turn"
+        elif status == "paused":
+            cls, dot, sub = "paused", "?", "Waiting for you"
+        else:
+            dot = {"done": "✓", "warn": "!", "error": "✕"}.get(status, str(i + 1))
+            sub = f"{st_['ms'] / 1000:.1f}s" if st_.get("ms") else ("working…" if status == "running" else "")
+        lis.append(f'<li class="he-s {cls}"><span class="he-dot">{dot}</span><br>{html.escape(label)}<span class="t">{sub}</span></li>')
+    extra = ""
+    if tail and running:
+        ev = (run["stages"]["research"].get("data") or {}).get("events") or []
+        extra = '<div class="he-log">' + "<br>".join(html.escape(f"{e['kind']}: {e['text']}")[:140] for e in ev[-3:]) + "</div>"
+    err = next((s_["error"] for s_ in run["stages"].values() if s_.get("error")), None)
+    if err:
+        extra += f'<div class="he-err">{html.escape(err)}</div>'
+    ph.markdown(f'{STEP_CSS}<div class="he-wrap"><div class="he-track"><div class="he-fill" style="width:{pct:.2f}%"></div>{creep}</div>'
+                f'<ol class="he-steps">{"".join(lis)}</ol>{extra}</div>', unsafe_allow_html=True)
 
 
 def get_run_input():
     return {"name": st.session_state.f_name.strip(), "company": st.session_state.f_company.strip(),
             "role": st.session_state.f_role.strip(), "notes": st.session_state.f_notes.strip(),
             "linkedin": st.session_state.f_linkedin.strip()}
-
-
-def fill_preset(p):
-    i = p["input"]
-    st.session_state.update(f_name=i["name"], f_company=i["company"], f_role=i["role"], f_notes=i.get("notes", ""), f_linkedin="", preset_id=p["id"])
 
 
 def finish(run):
@@ -96,12 +141,14 @@ def show_run(run, key, readonly=False):
     st.subheader(f"{inp['name']} · {inp.get('company') or 'no company given'}")
     getattr(st, kind)(label)
 
-    with st.expander("Live run view: the 8 stages", expanded=run["status"] in ("error", "awaiting_rep")):
-        ph = st.empty()
-        render_progress(run, ph)
+    step_ph = st.empty()
+    render_progress(run, step_ph, tail=False)
+    with st.expander("Research log and stats", expanded=run["status"] == "error"):
+        for e in (run["stages"]["research"].get("data") or {}).get("events") or []:
+            st.markdown(f"- `{e['kind']}` {e['text']}")
         stats = run.get("researchStats")
         if stats:
-            st.caption(f"{stats.get('webSearches', 0)} Google searches · {stats.get('pagesSeen', 0)} pages seen · {stats.get('dropped', 0)} unverifiable claims dropped · {stats.get('seconds', '?')}s")
+            st.caption(f"{stats.get('webSearches', 0)} searches · {stats.get('pagesSeen', 0)} headlines read · {stats.get('seconds', '?')}s")
 
     if run["status"] == "awaiting_rep" and not readonly:
         ident = run["stages"]["identity"]["data"]["identity"]
@@ -109,9 +156,7 @@ def show_run(run, key, readonly=False):
         opts = {c["id"]: c.get("label") or c["id"] for c in ident["clusters"]}
         pick = st.radio("Who is it?", list(opts), format_func=lambda i: opts[i], key=f"pick_{key}")
         if st.button("Continue with this person", type="primary", key=f"cont_{key}"):
-            ph2 = st.empty()
-            with st.spinner("Drafting…"):
-                finish(E.resume_pipeline(run, pick, lambda r: render_progress(r, ph2)))
+            finish(E.resume_pipeline(run, pick, lambda r: render_progress(r, step_ph)))
             st.rerun()
         return
 
@@ -172,13 +217,13 @@ def show_run(run, key, readonly=False):
             st.caption("The first draft failed a gate, so it was rewritten once.")
 
 
-def run_one(inp, mode, preset_id, fresh):
-    run = E.new_run(inp, mode, preset_id, fresh)
+def run_one(inp, fresh):
+    st.session_state["run"] = None
+    run = E.new_run(inp, "live", None, fresh)
     ph = st.empty()
     render_progress(run, ph)
     out = E.run_pipeline(run, lambda r: render_progress(r, ph))
     finish(out)
-    ph.empty()
     return out
 
 
@@ -189,7 +234,7 @@ with st.sidebar:
     has_key = bool(os.environ.get("GEMINI_API_KEY"))
     st.write("Gemini key: " + ("✅ loaded" if has_key else "❌ missing (add GEMINI_API_KEY to .env)"))
     st.caption(f"Models: {E.model_default()} / {E.model_fast()}")
-    st.caption(f"Seller: {E.SELLER['name']} · Snapshot dated {E.CAPTURED_AT}")
+    st.caption(f"Seller: {E.SELLER['name']}")
     limit = int(os.environ.get("DAILY_RUN_LIMIT") or 150)
     st.caption(f"Runs today: {E.runs_today()} / {limit}")
 
@@ -197,44 +242,27 @@ tab_new, tab_dash = st.tabs(["New run", "Dashboard"])
 
 # ---------------------------------------------------------------- new run
 with tab_new:
-    st.markdown("**Prepared prospects** (real public figures, professional facts only)")
-    cols = st.columns(len(E.PRESETS))
-    for col, p in zip(cols, E.PRESETS):
-        with col:
-            st.caption(p["tag"])
-            st.button(p["input"]["name"], key="pre_" + p["id"], on_click=fill_preset, args=(p,), use_container_width=True, help=p["blurb"])
-
     for k in ("f_name", "f_company", "f_role", "f_notes", "f_linkedin"):
         st.session_state.setdefault(k, "")
-    st.session_state.setdefault("preset_id", None)
 
     mode_single = st.radio("Mode", ["One prospect", "A list (CSV)"], horizontal=True, label_visibility="collapsed")
     if mode_single == "One prospect":
         a, b, c = st.columns(3)
-        a.text_input("Name", key="f_name")
-        b.text_input("Company (optional)", key="f_company")
-        c.text_input("Role", key="f_role")
+        a.text_input("Name", key="f_name", placeholder="e.g. Priya Sharma")
+        b.text_input("Company (optional)", key="f_company", placeholder="e.g. Acme Logistics")
+        c.text_input("Role", key="f_role", placeholder="e.g. CFO")
         st.text_input("Notes (where you met, context)", key="f_notes")
         st.text_input("LinkedIn URL (optional, never scraped; just given to the search as a hint)", key="f_linkedin")
-        m1, m2 = st.columns([2, 3])
-        research_mode = m1.radio("Research", ["Live web research", "Saved snapshot"], horizontal=True,
-                                 help="Snapshot only works for the 5 prepared prospects.")
-        fresh = m2.checkbox("Fresh research (skip the 24h cache)")
-        if st.button("Run", type="primary", disabled=not has_key and research_mode == "Live web research"):
+        fresh = st.checkbox("Fresh research (skip the 24h cache)")
+        if st.button("Run", type="primary", disabled=not has_key):
             inp = get_run_input()
             if not inp["name"]:
                 st.error("Enter a name.")
             elif E.runs_today() >= limit:
                 st.error("Daily run limit reached.")
             else:
-                pid = st.session_state.preset_id
-                if pid and not any(p["id"] == pid and p["input"]["name"] == inp["name"] for p in E.PRESETS):
-                    pid = None
-                if research_mode == "Saved snapshot" and not pid:
-                    st.error("Snapshots only exist for the prepared prospects. Click one above, or use live research.")
-                else:
-                    run_one(inp, "live" if research_mode.startswith("Live") else "fixture", pid, fresh)
-                    st.rerun()
+                run_one(inp, fresh)
+                st.rerun()
     else:
         st.caption("CSV columns: name, company, role, notes (company/role/notes optional). Up to 50 rows. Each is researched live; drafts land in the Dashboard.")
         up = st.file_uploader("CSV file", type="csv")
