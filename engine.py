@@ -1066,6 +1066,20 @@ def load_runs():
         return []
 
 
+SEED_FILE = HERE / "seed_runs.json"
+
+
+def load_all_runs():
+    """Your own runs first, then the saved sample runs shipped with the app (so the dashboard is never empty)."""
+    own = load_runs()
+    try:
+        seeds = json.loads(SEED_FILE.read_text(encoding="utf8"))
+    except Exception:
+        seeds = []
+    have = {r["id"] for r in own}
+    return own + [{**r, "sample": True} for r in seeds if r["id"] not in have]
+
+
 def save_run(run):
     runs = [r for r in load_runs() if r["id"] != run["id"]]
     runs.insert(0, _clean(run))

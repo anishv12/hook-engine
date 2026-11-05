@@ -501,8 +501,9 @@ with tab_new:
         st.markdown('<div class="empty"><div class="big">🎣</div>Enter a prospect above. You will watch seven stages run live, then get a verdict, a draft and the reasoning behind it.</div>', unsafe_allow_html=True)
 
 # ---------------------------------------------------------------- dashboard
+SAMPLE = ' <span class="tag">sample</span>'
 with tab_dash:
-    runs = E.load_runs()
+    runs = E.load_all_runs()
     if not runs:
         st.markdown('<div class="empty"><div class="big">📭</div>No runs yet. Run a prospect from the first tab and it will appear here.</div>', unsafe_allow_html=True)
     else:
@@ -522,6 +523,9 @@ with tab_dash:
         leg = "".join(f'<span><i style="background:{colors.get(s, "#777")}"></i>{PILL.get(s, s)} · {n}</span>' for s, n in counts.items())
         st.markdown(f'<div class="card"><div class="h">Where the runs ended up</div><div class="dist">{dist}</div><div class="dleg">{leg}</div></div>', unsafe_allow_html=True)
 
+        n_s = sum(1 for r in runs if r.get("sample"))
+        if n_s:
+            st.caption(f"{n_s} saved sample run(s) are pre-loaded so this view is never empty. Your own runs appear on top.")
         opts = ["All"] + [PILL.get(s, s) for s in counts]
         pick = st.radio("Filter", opts, horizontal=True, label_visibility="collapsed")
         shown = [r for r in runs if pick == "All" or PILL.get(r["status"], r["status"]) == pick]
@@ -533,13 +537,13 @@ with tab_dash:
             bar = f'<div class="mini"><b style="width:{min(max(p, 0), 1) * 100:.0f}%"></b></div>' if isinstance(p, (int, float)) else '<span class="co">–</span>'
             co = (res.get("target") or {}).get("company") or r["input"].get("company") or "(none)"
             when = time.strftime("%d %b %H:%M", time.localtime(r["createdAt"]))
-            rows.append(f'<div class="row"><span><span class="nm">{esc(r["input"]["name"])}</span><br><span class="co mono" style="font-size:.7rem">{when}</span></span><span class="co">{esc(co)}</span>'
+            rows.append(f'<div class="row"><span><span class="nm">{esc(r["input"]["name"])}</span>{SAMPLE if r.get("sample") else ""}<br><span class="co mono" style="font-size:.7rem">{when}</span></span><span class="co">{esc(co)}</span>'
                         f'<span><span class="pill {tone}">{PILL.get(r["status"], r["status"])}</span></span><span>{bar}</span><span class="co">{esc((r.get("review") or {}).get("decision", "–"))}</span></div>')
         rows.append("</div>")
         st.markdown("".join(rows), unsafe_allow_html=True)
 
         if shown:
-            labels = {r["id"]: f"{r['input']['name']} · {time.strftime('%d %b %H:%M', time.localtime(r['createdAt']))}" for r in shown}
+            labels = {r["id"]: f"{r['input']['name']}{' (sample)' if r.get('sample') else ''} · {time.strftime('%d %b %H:%M', time.localtime(r['createdAt']))}" for r in shown}
             st.markdown('<div class="sec">Open a run</div>', unsafe_allow_html=True)
             sel = st.selectbox("Open a run", list(labels), format_func=lambda i: labels[i], label_visibility="collapsed")
             if sel:
