@@ -387,11 +387,21 @@ def choose_hook(scored):
             "separation": sep, "strongCount": strong}
 
 
+EXEC_RE = re.compile(r"\b(ceo|chief executive|founder|co-?founder|managing director|md|chairman|chairperson|owner|proprietor)\b|(?<!vice )(?<!vice-)\bpresident\b", re.I)
+
+
+def is_exec_sponsor(role):
+    return bool(EXEC_RE.search(role or ""))
+
+
 def apply_rules(inp, scored, choice, identity, now, persona):
     log = []
     out = {"mode": "standard", "tone": "direct", "status": "draft", "holdUntil": None, "warnings": [], "target": dict(inp)}
-    # R0 buyer fit
-    if persona and isinstance(persona.get("buyer_fit"), (int, float)) and persona["buyer_fit"] < BUYER_FIT_MIN:
+    # R1 buyer fit
+    if is_exec_sponsor(inp.get("role")):
+        out["audience"] = "exec"
+        log.append({"rule": "R1 · Buyer fit", "fired": True, "text": f"{inp['name']} is a {inp.get('role')}, an executive sponsor rather than the day-to-day finance owner. No referral ask: the email goes to them directly, stays brief and business-level, and proposes a call with them or a member of their team."})
+    elif persona and isinstance(persona.get("buyer_fit"), (int, float)) and persona["buyer_fit"] < BUYER_FIT_MIN:
         out["mode"], out["status"] = "redirect", "redirect"
         out["redirectTo"] = persona.get("better_contact") or "the person who runs finance operations"
         log.append({"rule": "R1 · Buyer fit", "fired": True, "text": f"{inp['name']} looks like {persona.get('seniority') or 'a'} {persona.get('function') or ''} profile (buyer fit {persona['buyer_fit']:.2f}): {persona.get('why') or 'not a finance or operations decision-maker'}. Instead of pitching, the draft asks for an introduction to {out['redirectTo']}."})
@@ -479,7 +489,7 @@ def analyze_prompt(inp, signals, profile, seller):
         "", "PAIN AXES (what the seller's product solves):",
         "\n".join(f"- {a['id']}: {a['label']} — {a['desc']}" for a in ANCHORS),
         "", "SIGNALS:", json.dumps(sigs, indent=1, ensure_ascii=False), "", "TASKS",
-        "1. Persona. From the person's role as entered: function (finance | operations | other), seniority (executive | senior | manager | individual), buyer_fit 0..1 (1 = owns or strongly influences finance/ops tooling decisions; an analyst, associate, engineer or salesperson is below 0.3), why (one sentence), and better_contact: the title the rep should ask for instead if buyer_fit is low (empty otherwise).",
+        "1. Persona. From the person's role as entered: function (finance | operations | other), seniority (executive | senior | manager | individual), buyer_fit 0..1 (1 = owns or strongly influences finance/ops tooling decisions; an analyst, associate, engineer or salesperson is below 0.3; a CEO, founder, managing director or president is an executive sponsor and gets 0.6 or more), why (one sentence), and better_contact: the title the rep should ask for instead if buyer_fit is low (empty otherwise).",
         "2. For every signal, score:",
         "   pain: 0..1 per axis — how strongly this signal suggests that pain exists right now at the prospect's company (0 = unrelated).",
         "   valence: -1..1 — is this event bad news for the company or person (layoffs, losses, lawsuits, fraud, regulatory penalties, auditor resignations = negative; routine or planned leadership changes, appointments and reshuffles are neutral, about 0; funding, launches, promotions = positive).",
@@ -504,13 +514,20 @@ def draft_prompt(seller, target, decision, choice, scored, critique=""):
         words = "40 to 70"
     elif mode == "fallback":
         task = ("SIGNAL QUALITY: thin. There is no strong recent hook. Write a short, honest, human note (40-70 words). You may mention one plain fact (for example their new role) but do not pretend to know more. "
-                "One line on what Zamp does, then one genuine question about how they handle finance work today.")
+                "One line on what Zamp does, then " + ("close by proposing a short call with them or a member of their team." if decision.get("audience") == "exec" else "one genuine question about how they handle finance work today."))
         words = "40 to 70"
     else:
         sup = " | ".join(f"[{s['id']}] {s['title']} — {s['detail']}" for s in choice["supporting"]) or "none"
         task = f"PAIN IT POINTS AT: {anchor_label(choice['anchor'])}.\nLEAD HOOK [{hook['id']}]: {hook['title']} — {hook['detail']} ({da(hook)})\nSUPPORTING: {sup}"
         words = "60 to 100"
     careful = decision["tone"] == "careful"
+    if decision.get("audience") == "exec":
+        cta_lines = [
+            "- AUDIENCE: this is a CEO or founder, an executive sponsor rather than the day-to-day finance owner. Be especially respectful and brief. Speak to business outcomes they care about (control, speed, the cost of growth) rather than finance mechanics. NEVER ask them to point you to, refer you to or introduce you to someone, and never ask who owns finance or who to speak to.",
+            "- CLOSE with this idea, in your own polite words: 'I would love to set up a call with you or your respective team to take this forward, at a time that suits you.' It must be a statement of intent, not a question about who to speak to. Never write 'should I speak with', 'shall I reach out to' or anything that asks them to choose or name someone. Do not ask them to do any work for you. Keep the whole body to 50 to 85 words.",
+        ]
+    else:
+        cta_lines = ["- Close with one courteous, low-pressure question about their world, or politely offer " + seller["ask"] + " at their convenience. Never ask them to 'map a process'."]
     L = [
         "You write first-touch cold emails that busy finance leaders actually answer. A human reviews the draft before anything is sent.", "",
         f"SENDER: {seller['sender']} at {seller['name']}.", f"ABOUT ZAMP: {seller['pitch']}",
@@ -525,7 +542,7 @@ def draft_prompt(seller, target, decision, choice, scored, critique=""):
         "- Write numbers and currency as digits and symbols (for example ₹733 crore, 69 percent, $100 million), never spelled out in words.",
         "- Do not describe their situation back to them at length or lecture them on what their job involves. Do not say 'you must be' or 'you are probably'. Offer a possibility instead.",
         "- SUBJECT (this matters a lot): 6 to 11 words, formal and polite, sentence case, no emojis, no exclamation marks. Combine (a) one concrete detail from the lead hook (a proper noun, deal name or number) with (b) Zamp's own promotional idea, such as 'AI employee', 'hand the rest to an AI employee', 'an AI employee that runs it end to end', or 'owns the job'. Make it feel like a specific offer of relief, not a generic pitch. BANNED in the subject: 'finance operations', 'financial operations', 'finance function', 'streamline', 'efficiency', 'scaling', 'opportunity', 'partnership', 'quick question', 'maintaining', 'managing', 'support for'. Style examples with made-up names (write NEW ones for THIS prospect): 'Hand Acme's Boreal integration workload to an AI employee', 'An AI employee for the month-end close after Acme's Series C', 'Acme's new Dubai entity: let an AI employee own the invoices'. If the tone is careful, do NOT mention the bad news; use something like 'An AI employee for Acme's finance team, when the time is right'.",
-        "- Close with one courteous, low-pressure question about their world, or politely offer " + seller["ask"] + " at their convenience. Never ask them to 'map a process'.",
+        *cta_lines,
         "- Every fact about the prospect must come from the facts above. No invented metrics, quotes or customers. Never put signal ids like [s2] in the subject or body.",
         ("- TONE: careful. This company has recent bad news. No congratulations, no 'growth', 'exciting' or 'scale' framing, and never mention the bad news. Be gentle, brief and lower-pressure." if careful
          else "- TONE: courteous and professional. If the hook is their new appointment, begin with a brief, sincere congratulations."),
@@ -982,6 +999,10 @@ def finish_pipeline(run, on_update):
         hit = sorted(w for w in used if w in text.lower())
         hook_ok = True if not used else bool(hit)
         banned = [b for b in _BANNED if b in text.lower()]
+        if decision.get("audience") == "exec":
+            banned += ["exec: " + b for b in ("point me", "pointing me", "refer me", "introduce me", "who owns", "who handles", "should i speak", "should i reach", "shall i") if b in text.lower()]
+            if not re.search(r"\bcall\b|\bconversation\b|\bchat\b", draft["body"].lower()) or not re.search(r"\bteams?\b|colleague", draft["body"].lower()):
+                banned.append("exec: no call offer with them or their team")
         banned += ["subject: " + b for b in _SUBJECT_BANNED if b in draft["subject"].lower()]
         if not re.search(r"\d|[A-Z][a-z]{3,}", draft["subject"][1:]) :
             banned.append("subject has no concrete detail")
