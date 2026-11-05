@@ -400,7 +400,7 @@ def apply_rules(inp, scored, choice, identity, now, persona):
     # R1 buyer fit
     if is_exec_sponsor(inp.get("role")):
         out["audience"] = "exec"
-        log.append({"rule": "R1 · Buyer fit", "fired": True, "text": f"{inp['name']} is a {inp.get('role')}, an executive sponsor rather than the day-to-day finance owner. No referral ask: the email goes to them directly, stays brief and business-level, and proposes a call with them or a member of their team."})
+        log.append({"rule": "R1 · Buyer fit", "fired": True, "text": f"{inp['name']} is a {inp.get('role')}, an executive sponsor rather than the day-to-day finance owner. The email goes to them directly, stays brief and business-level, and proposes a call with them or a member of their team."})
     elif persona and isinstance(persona.get("buyer_fit"), (int, float)) and persona["buyer_fit"] < BUYER_FIT_MIN:
         out["mode"], out["status"] = "redirect", "redirect"
         out["redirectTo"] = persona.get("better_contact") or "the person who runs finance operations"
