@@ -1,0 +1,335 @@
+[
+ {
+  "id": "nazara",
+  "tag": "Happy path",
+  "tagKind": "happy",
+  "blurb": "New CFO inheriting a multi-country group mid-acquisition.",
+  "input": {
+   "name": "Arun Agrawal",
+   "company": "Nazara Technologies",
+   "role": "CFO",
+   "notes": ""
+  },
+  "signals": [
+   {
+    "id": "s1",
+    "kind": "career",
+    "about": "person",
+    "date": "2026-10-12",
+    "source": "peoplematters.in",
+    "url": "https://www.peoplematters.in/news/leadership/nazara-rejig-mittersain-steps-down-as-md-cfo-quits-caratlanes-sacheti-gets-executive-role-52684",
+    "title": "Named CFO of Nazara from 16 Oct 2026",
+    "detail": "Chartered accountant with 20+ years' experience; previously global CFO at Ness Digital Engineering and Mastek, with earlier roles at Firstsource, GE, Wipro and Tata Motors. Replaces Rakesh Shah.",
+    "subject": {
+     "name": "Arun Agrawal",
+     "company": "Nazara Technologies",
+     "role": "CFO"
+    }
+   },
+   {
+    "id": "s2",
+    "kind": "company",
+    "about": "company",
+    "date": "2026-03-18",
+    "source": "pocketgamer.biz",
+    "url": "https://www.pocketgamer.biz/nazara-to-acquire-a-50-controlling-stake-in-bluetile-and-bestplay-in-100m-deal",
+    "title": "$100.3M deal for 50% of Spain's Bluetile Games and BestPlay",
+    "detail": "Nazara's largest acquisition, made through its UK subsidiary; $59.7M paid at first close and $40.6M due within six months.",
+    "subject": {
+     "company": "Nazara Technologies"
+    }
+   },
+   {
+    "id": "s3",
+    "kind": "company",
+    "about": "company",
+    "date": "2026-10-12",
+    "source": "peoplematters.in",
+    "url": "https://www.peoplematters.in/news/leadership/nazara-rejig-mittersain-steps-down-as-md-cfo-quits-caratlanes-sacheti-gets-executive-role-52684",
+    "title": "Up to $77M into the UK subsidiary; loans converted to equity",
+    "detail": "Board approved funding Nazara Technologies UK for the second tranche and converting loans to Smaaash Entertainment (₹129 crore) and Nazara UK (£23M) into equity.",
+    "subject": {
+     "company": "Nazara Technologies"
+    }
+   },
+   {
+    "id": "s4",
+    "kind": "company",
+    "about": "company",
+    "date": "2026-10-13",
+    "source": "peoplematters.in",
+    "url": "https://www.peoplematters.in/news/leadership/nazara-rejig-mittersain-steps-down-as-md-cfo-quits-caratlanes-sacheti-gets-executive-role-52684",
+    "title": "Leadership reshuffle: founder steps down as MD, new CEO",
+    "detail": "Founder Nitish Mittersain became non-executive director; Raymond Albaladejo Stauffer is CEO; CaratLane co-founder Mithun Sacheti became executive director.",
+    "subject": {
+     "company": "Nazara Technologies"
+    }
+   },
+   {
+    "id": "s5",
+    "kind": "funding",
+    "about": "company",
+    "date": "2026-10-12",
+    "source": "sahi.com",
+    "url": "https://www.sahi.com/news/nazara-technologies-appoints-arun-agrawal-as-cfo-effective-october-16",
+    "title": "Q1 FY27 revenue ₹429 crore; ₹733 crore preferential issue",
+    "detail": "Consolidated Q1 FY27 revenue from operations of ₹429 crore. Pursuing acquisitions across gaming and investing in AI-led game development.",
+    "subject": {
+     "company": "Nazara Technologies"
+    }
+   }
+  ]
+ },
+ {
+  "id": "padmanabh",
+  "tag": "Edge · Thin signal",
+  "tagKind": "edge",
+  "blurb": "Real, fresh news about the person, but nothing that maps to a pain.",
+  "input": {
+   "name": "Akash Parmar",
+   "company": "Padmanabh Industries",
+   "role": "CFO",
+   "notes": ""
+  },
+  "signals": [
+   {
+    "id": "s1",
+    "kind": "career",
+    "about": "person",
+    "date": "2026-10-29",
+    "source": "screener.in",
+    "url": "https://screener.in/company/526905",
+    "title": "Appointed CFO effective 30 Oct 2026",
+    "detail": "Replaces Umesh Parghi, who resigned. No other public detail about his background.",
+    "subject": {
+     "name": "Akash Parmar",
+     "company": "Padmanabh Industries",
+     "role": "CFO"
+    }
+   },
+   {
+    "id": "s2",
+    "kind": "company",
+    "about": "company",
+    "date": "2026-10-29",
+    "source": "screener.in",
+    "url": "https://screener.in/company/526905",
+    "title": "Agri and commodities trader, ~₹22 crore revenue",
+    "detail": "Listed micro-cap (market cap about ₹5 crore) trading agri goods, commodities and building materials.",
+    "subject": {
+     "company": "Padmanabh Industries"
+    }
+   },
+   {
+    "id": "s3",
+    "kind": "company",
+    "about": "company",
+    "date": "2026-10-29",
+    "source": "screener.in",
+    "url": "https://screener.in/company/526905",
+    "title": "Board meets 4 Nov 2026 for Q2 results",
+    "detail": "Routine board meeting to consider unaudited results for the quarter ended 30 September 2026.",
+    "subject": {
+     "company": "Padmanabh Industries"
+    }
+   }
+  ]
+ },
+ {
+  "id": "hubspot",
+  "tag": "Edge · Bad news",
+  "tagKind": "edge",
+  "blurb": "A real pain exists, but the company cut 7% of staff last month.",
+  "input": {
+   "name": "Kate Bueker",
+   "company": "HubSpot",
+   "role": "CFO",
+   "notes": ""
+  },
+  "signals": [
+   {
+    "id": "s1",
+    "kind": "press",
+    "about": "company",
+    "date": "2026-10-06",
+    "source": "boston.com",
+    "url": "https://www.boston.com/news/business/2026/10/06/hubspot-to-lay-off-660-employees/",
+    "title": "HubSpot lays off ~660 people (about 7%)",
+    "detail": "CEO Yamini Rangan said the cuts reorganize teams around customer outcomes and remove management layers.",
+    "subject": {
+     "company": "HubSpot"
+    }
+   },
+   {
+    "id": "s2",
+    "kind": "press",
+    "about": "person",
+    "date": "2026-10-06",
+    "source": "sec.gov (8-K)",
+    "url": "https://www.sec.gov/Archives/edgar/data/0001404655/000119312526414965/d183135d8k.htm",
+    "title": "Restructuring 8-K signed by Kate Bueker",
+    "detail": "Estimated $65–75M of charges, mostly severance; role cuts substantially complete by end of Q1 FY2027 subject to local consultation, cash paid out by June 2027.",
+    "subject": {
+     "name": "Kate Bueker",
+     "company": "HubSpot",
+     "role": "CFO"
+    }
+   },
+   {
+    "id": "s3",
+    "kind": "company",
+    "about": "company",
+    "date": "2026-10-06",
+    "source": "boston.com",
+    "url": "https://www.boston.com/news/business/2026/10/06/hubspot-to-lay-off-660-employees/",
+    "title": "Shift to selling AI outcomes is changing pricing",
+    "detail": "Leadership says the move from software to AI-delivered outcomes is transforming product, pricing and how customers are served.",
+    "subject": {
+     "company": "HubSpot"
+    }
+   }
+  ]
+ },
+ {
+  "id": "amitgupta",
+  "tag": "Edge · Who is this?",
+  "tagKind": "edge",
+  "blurb": "Only a name and title from an event badge. Several real CFOs match.",
+  "input": {
+   "name": "Amit Gupta",
+   "company": "",
+   "role": "CFO",
+   "notes": "Met at a CFO roundtable in Mumbai; badge said 'Amit Gupta, CFO'"
+  },
+  "signals": [
+   {
+    "id": "s1",
+    "kind": "career",
+    "about": "person",
+    "date": "2026-08-27",
+    "source": "investywise.com",
+    "url": "https://www.investywise.com/trident-limited-appointment-of-chief-financial-officer/",
+    "title": "Trident Limited appoints Amit Gupta as CFO",
+    "detail": "Effective 27 Aug 2026. Chartered accountant, 22+ years in finance, about 18 of them inside the Trident Group; ISB alumnus.",
+    "subject": {
+     "name": "Amit Gupta",
+     "company": "Trident Limited",
+     "role": "CFO"
+    }
+   },
+   {
+    "id": "s2",
+    "kind": "career",
+    "about": "person",
+    "date": "2026-04-27",
+    "source": "whalesbook.com",
+    "url": "https://www.whalesbook.com/corporate-news/English/industrial-goodsservices/Huhtamaki-India-Names-Amit-Gupta-New-CFO-Anil-Kaul-Moves-to-Controller/69ef964735c37de4af32329b",
+    "title": "Huhtamaki India names Amit Gupta CFO",
+    "detail": "Effective 28 Apr 2026. Previously Group CFO at Arka Fincap and earlier at ICICI Bank; interim CFO Anil Kaul returns to Finance Controller.",
+    "subject": {
+     "name": "Amit Gupta",
+     "company": "Huhtamaki India",
+     "role": "CFO"
+    }
+   },
+   {
+    "id": "s3",
+    "kind": "company",
+    "about": "company",
+    "date": "2026-10-27",
+    "source": "nseindia.com",
+    "url": "https://nsearchives.nseindia.com/corporate/HUHTAMAKI1_27102026143234_HIL_PressRelease_27Oct2026_Final.pdf",
+    "title": "Huhtamaki India Q3 sales up 23.7% to ₹748 crore",
+    "detail": "Packaging maker with 10 plants in India and about 2,400 employees; growth from volumes and passing on higher material costs.",
+    "subject": {
+     "company": "Huhtamaki India"
+    }
+   },
+   {
+    "id": "s4",
+    "kind": "career",
+    "about": "person",
+    "date": "2025-07-24",
+    "source": "cxodigitalpulse.com",
+    "url": "https://www.cxodigitalpulse.com/?p=34620",
+    "title": "Amit Gupta joins Raise Financial Services as Group CFO",
+    "detail": "Ex-Group CFO at Arka Fincap; earlier IndoStar Capital, ICICI Bank and Magma Leasing. Fintech and wealth management group.",
+    "subject": {
+     "name": "Amit Gupta",
+     "company": "Raise Financial Services",
+     "role": "Group CFO"
+    }
+   }
+  ]
+ },
+ {
+  "id": "rategain",
+  "tag": "Edge · Changed jobs",
+  "tagKind": "edge",
+  "blurb": "The rep's list says Optum India. He moved five weeks ago.",
+  "input": {
+   "name": "Chetan Garg",
+   "company": "Optum India",
+   "role": "CFO",
+   "notes": "From a 2025 healthcare finance event list"
+  },
+  "signals": [
+   {
+    "id": "s1",
+    "kind": "career",
+    "about": "person",
+    "date": "2026-09-28",
+    "source": "nseindia.com",
+    "url": "https://nsearchives.nseindia.com/corporate/RATEGAIN_28092026131853_RG_PR_28092026.pdf",
+    "title": "Joins RateGain as CFO, effective 28 Sep 2026",
+    "detail": "Leads RateGain's global finance function from Noida. Cornell MBA, IIT Madras.",
+    "subject": {
+     "name": "Chetan Garg",
+     "company": "RateGain Travel Technologies",
+     "role": "CFO"
+    }
+   },
+   {
+    "id": "s2",
+    "kind": "company",
+    "about": "company",
+    "date": "2026-09-28",
+    "source": "nseindia.com",
+    "url": "https://nsearchives.nseindia.com/corporate/RATEGAIN_28092026131853_RG_PR_28092026.pdf",
+    "title": "14,000+ customers in 160+ countries",
+    "detail": "Travel and hospitality SaaS serving 33 of the top 40 hotel chains and 700+ partners.",
+    "subject": {
+     "company": "RateGain Travel Technologies"
+    }
+   },
+   {
+    "id": "s3",
+    "kind": "company",
+    "about": "company",
+    "date": "2026-09-28",
+    "source": "freepressjournal.in",
+    "url": "https://www.freepressjournal.in/business/rategain-travel-technologies-appoints-chetan-garg-as-chief-financial-officer",
+    "title": "Hired for acquisition integration and governance",
+    "detail": "Founder Bhanu Chopra cited his record integrating acquired businesses and building governance as reasons for the hire.",
+    "subject": {
+     "company": "RateGain Travel Technologies"
+    }
+   },
+   {
+    "id": "s4",
+    "kind": "career",
+    "about": "person",
+    "date": null,
+    "source": "nseindia.com",
+    "url": "https://nsearchives.nseindia.com/corporate/RATEGAIN_28092026131853_RG_PR_28092026.pdf",
+    "title": "Previously CFO of Optum India",
+    "detail": "Optum India is part of UnitedHealth Group. Before that, VP Finance for Whirlpool Asia; started at PwC and Deloitte.",
+    "subject": {
+     "name": "Chetan Garg",
+     "company": "Optum India",
+     "role": "CFO"
+    }
+   }
+  ]
+ }
+]
