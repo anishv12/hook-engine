@@ -212,7 +212,7 @@ def ai_json(prompt, tier="default", temperature=None):
     fast = tier == "quick"
     body = {"contents": [{"role": "user", "parts": [{"text": prompt}]}],
             "generationConfig": {"responseMimeType": "application/json", "maxOutputTokens": 8192, "thinkingConfig": {"thinkingBudget": 0},
-                          **({} if temperature is None else {"temperature": temperature})}}
+                          "seed": 7, **({} if temperature is None else {"temperature": temperature})}}
     r = generate(model, body, fast)
     v = extract_json(r["text"])
     if v is not None:
@@ -376,8 +376,14 @@ def choose_hook(scored):
     elig = [s for s in scored if s["eligible"]]
     strengths = {an["id"]: sum(s["score"] * s["pain"][an["id"]] for s in elig) for an in ANCHORS}
     ranked = sorted(({"id": an["id"], "v": r2(strengths[an["id"]])} for an in ANCHORS), key=lambda x: -x["v"])
-    anchor = ranked[0]["id"]
-    in_anchor = sorted(((s, s["score"] * s["pain"][anchor]) for s in elig), key=lambda x: -x[1])
+    def qualifies(s):
+        return s["score"] >= HOOK_THRESHOLD and s["relevance"] >= MIN_RELEVANCE and s["freshness"] >= MIN_HOOK_FRESHNESS
+
+    def in_anchor_of(a):
+        return sorted(((s, s["score"] * s["pain"][a]) for s in elig), key=lambda x: (not qualifies(x[0]), -x[1], str(x[0]["id"])))
+    # lead with the strongest anchor that has a hook good enough to use; a stale headline never beats a fresh qualifying one
+    anchor = next((r["id"] for r in ranked if in_anchor_of(r["id"]) and qualifies(in_anchor_of(r["id"])[0][0])), ranked[0]["id"])
+    in_anchor = in_anchor_of(anchor)
     hook = in_anchor[0][0] if in_anchor else None
     supporting = [x[0] for x in in_anchor[1:] if x[0]["pain"][anchor] >= 0.4 and x[0]["score"] >= 0.35][:2]
     top, second = ranked[0]["v"], ranked[1]["v"]
@@ -736,7 +742,7 @@ def research_news(inp, log, seller):
                 continue
             seen.add(k)
             items.append(it)
-    items.sort(key=lambda x: x["date"] or "", reverse=True)
+    items.sort(key=lambda x: (x["date"] or "", x["title"]), reverse=True)  # stable order whatever feed answers first
     uniq, sets = [], []
     for it in items:
         ts = {w for w in re.findall(r"[a-z0-9]{4,}", it["title"].lower())}
@@ -978,11 +984,12 @@ def finish_pipeline(run, on_update):
     allowed = {str(s["id"]) for s in scored if s["eligible"]}
     hook = choice["hook"]
     mode = decision["mode"]
-    attempt, critique, draft, quality = 0, "", None, None
-    while attempt < 2:
+    MAX_ATTEMPTS = 4
+    attempt, critique, draft, quality, best = 0, "", None, None, None
+    while attempt < MAX_ATTEMPTS:
         attempt += 1
         setst("draft", status="running", data={"attempt": attempt})
-        d = ai_json(draft_prompt(run["seller"], decision["target"], decision, choice, scored, critique), temperature=0.6)
+        d = ai_json(draft_prompt(run["seller"], decision["target"], decision, choice, scored, critique), temperature=0.2 if attempt == 1 else 0.3)
         draft = {"subject": str(d.get("subject") or ""), "body": str(d.get("body") or ""), "claims": d.get("claims") if isinstance(d.get("claims"), list) else [],
                  "subjectAlternatives": [x.strip() for x in (d.get("subject_alternatives") or []) if isinstance(x, str) and x.strip() and not any(b in x.lower() for b in _SUBJECT_BANNED)][:2]}
         draft["body"] = re.sub(r"(regards,)[ \t]*\n\s*\n+", r"\1\n", draft["body"], flags=re.I)
@@ -1018,11 +1025,20 @@ def finish_pipeline(run, on_update):
             {"id": "length", "label": "Length", "value": words, "pass": lo <= words <= hi, "detail": f"{words} words (target {lo}–{hi})."},
         ]
         passed = p >= QUALITY_BAR and all(c["pass"] for c in checks if c["id"] != "length")
+        clean = passed and all(c["pass"] for c in checks)
         quality = {"personalisation": p, "checks": checks, "passed": passed, "attempt": attempt}
-        setst("quality", status="done" if passed else "warn", data=quality)
-        if passed or attempt >= 2:
+        n_fail = sum(1 for c in checks if not c["pass"]) + (0 if p >= QUALITY_BAR else 1)
+        if best is None or n_fail < best[0] or (n_fail == best[0] and p > best[1]["quality"]["personalisation"]):
+            best = (n_fail, {"draft": draft, "quality": quality})
+        if clean:
+            setst("quality", status="done", data=quality)
             break
-        critique = " ".join(c["label"] + ": " + c["detail"] + ((" Remove: " + "; ".join(str(u.get("text")) for u in c["ungrounded"])) if c.get("ungrounded") else "") for c in checks if not c["pass"]) + " Fix only those problems; keep it short, human and specific."
+        setst("quality", status="warn", data=quality)
+        if attempt >= MAX_ATTEMPTS:
+            draft, quality = best[1]["draft"], best[1]["quality"]
+            break
+        setst("draft", status="running", data={"attempt": attempt + 1, "rewriting": True})
+        critique = " ".join(c["label"] + ": " + c["detail"] + ((" Remove: " + "; ".join(str(u.get("text")) for u in c["ungrounded"])) if c.get("ungrounded") else "") for c in checks if not c["pass"]) + (f" Personalisation {p:.2f} is below {QUALITY_BAR}: use the specific detail from the lead signal." if p < QUALITY_BAR else "") + " Fix only those problems; keep it short, human and specific."
 
     status = {"no_send": "no_send", "redirect": "redirect", "hold": "hold"}.get(decision["status"]) or ("ready" if quality["passed"] else "needs_edit")
     run["result"] = {"draft": draft, "quality": quality, "decision": decision, "choice": slim, "target": decision["target"], "status": status}

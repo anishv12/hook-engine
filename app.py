@@ -386,8 +386,10 @@ def show_run(run, key, readonly=False):
     with g2:
         gates = "".join(f'<div class="gate {"p" if c["pass"] else "f"}"><b>{"✓" if c["pass"] else "✕"} {esc(c["label"])}</b><br><span>{esc(c["detail"])}</span></div>' for c in q["checks"])
         st.markdown(f'<div class="card"><div class="h">Quality gates</div><div class="gates">{gates}</div></div>', unsafe_allow_html=True)
-        if q["attempt"] > 1:
-            st.caption("The first draft failed a gate, so it was rewritten once.")
+        if not q["passed"]:
+            st.warning("Still failing a gate after 4 automatic rewrites. This is the best version; please fix it in the editor before approving.")
+        elif q["attempt"] > 1:
+            st.caption(f"The first draft failed a gate, so it was rewritten automatically until it passed (version {q['attempt']}).")
 
 
 ALIASES = {"name": ("name", "full name", "prospect", "prospect name", "contact", "contact name"),
