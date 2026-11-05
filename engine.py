@@ -60,7 +60,7 @@ GENERIC_TEMPLATES = [
 STOP = set("a an the and or but if of to in on at for with from by as is are was were be been being it its this that these those i you your we our us they their them he she his her my me so do does did not no yes can could would should will just about into over than then there here what which who whom how when where why all any some more most very also up out only own same too s t don now get got have has had let".split())
 
 STAGES = [
-    ("intake", "Intake"), ("research", "Research"), ("identity", "Identity check"),
+    ("intake", "Intake"), ("research", "Research"),
     ("score", "Pain-space scoring"), ("rules", "Hook & guardrails"), ("draft", "Draft"),
     ("quality", "Quality gates"), ("review", "Human review"),
 ]
@@ -394,27 +394,10 @@ def apply_rules(inp, scored, choice, identity, now, persona):
     if persona and isinstance(persona.get("buyer_fit"), (int, float)) and persona["buyer_fit"] < BUYER_FIT_MIN:
         out["mode"], out["status"] = "redirect", "redirect"
         out["redirectTo"] = persona.get("better_contact") or "the person who runs finance operations"
-        log.append({"rule": "R0 · Buyer fit", "fired": True, "text": f"{inp['name']} looks like {persona.get('seniority') or 'a'} {persona.get('function') or ''} profile (buyer fit {persona['buyer_fit']:.2f}): {persona.get('why') or 'not a finance or operations decision-maker'}. Instead of pitching, the draft asks for an introduction to {out['redirectTo']}."})
+        log.append({"rule": "R1 · Buyer fit", "fired": True, "text": f"{inp['name']} looks like {persona.get('seniority') or 'a'} {persona.get('function') or ''} profile (buyer fit {persona['buyer_fit']:.2f}): {persona.get('why') or 'not a finance or operations decision-maker'}. Instead of pitching, the draft asks for an introduction to {out['redirectTo']}."})
     else:
         bf = float((persona or {}).get("buyer_fit") or 0)
-        log.append({"rule": "R0 · Buyer fit", "fired": False, "text": f"Buyer fit {bf:.2f} ({persona.get('seniority') or '?'}, {persona.get('function') or '?'}). {persona.get('why') or ''}" if persona else "No persona judgment; assuming the rep picked a buyer."})
-    # R1 identity
-    st = identity.get("status")
-    if st == "confirmed_by_rep":
-        cur = identity.get("current") or {}
-        if cur.get("company"):
-            out["target"] = {**inp, "company": cur["company"]}
-        excl = sum(1 for s in scored if s["relatesTo"] == "other_person")
-        log.append({"rule": "R1 · Identity", "fired": True, "text": f"Two people share this name. The rep chose \"{identity['chosen'].get('label')}\"; {excl} signal(s) about the other person were excluded."})
-    elif st == "role_changed" and (identity.get("current") or {}).get("company"):
-        cur = identity["current"]
-        out["target"] = {**inp, "company": cur["company"], "role": cur.get("role") or inp.get("role")}
-        prev = sum(1 for s in scored if s["relatesTo"] == "previous_role")
-        log.append({"rule": "R1 · Role change", "fired": True, "text": f"Signals show {inp['name']} now works at {cur['company']} as {cur.get('role') or 'a new role'}. Retargeted the draft; {prev} signal(s) about the previous employer were set aside."})
-        out["mode"] = "retargeted"
-        out["retargeted"] = True
-    else:
-        log.append({"rule": "R1 · Identity", "fired": False, "text": f"Identity confirmed ({round((identity.get('confidence') or 0) * 100)}% confidence). No retargeting."})
+        log.append({"rule": "R1 · Buyer fit", "fired": False, "text": f"Buyer fit {bf:.2f} ({persona.get('seniority') or '?'}, {persona.get('function') or '?'}). {persona.get('why') or ''}" if persona else "No persona judgment; assuming the rep picked a buyer."})
     # R2 thin signal
     hook = choice["hook"]
     if not hook or hook["score"] < HOOK_THRESHOLD or hook["relevance"] < MIN_RELEVANCE or hook["freshness"] < MIN_HOOK_FRESHNESS or choice["strongCount"] == 0:
@@ -486,7 +469,7 @@ def analyze_prompt(inp, signals, profile, seller):
              "when": f"{s['daysAgo']} days ago" if s.get("daysAgo") is not None else "date unknown",
              "about": s.get("subject")} for s in signals]
     L = [
-        "You are the analysis step of a B2B sales research pipeline. Judge each research signal about a prospect. Be strict and literal; do not invent facts. If the rep gave no company, the identity is ambiguous whenever the signals describe more than one person.",
+        "You are the analysis step of a B2B sales research pipeline. Judge each research signal about a prospect. Be strict and literal; do not invent facts. Trust the prospect details exactly as the rep entered them.",
         "", "PROSPECT AS ENTERED BY THE SALES REP:",
         json.dumps({"name": inp["name"], "company": inp.get("company") or "(not given)", "role": inp.get("role"), "rep_notes": inp.get("notes") or ""}),
         "",
@@ -496,17 +479,15 @@ def analyze_prompt(inp, signals, profile, seller):
         "", "PAIN AXES (what the seller's product solves):",
         "\n".join(f"- {a['id']}: {a['label']} — {a['desc']}" for a in ANCHORS),
         "", "SIGNALS:", json.dumps(sigs, indent=1, ensure_ascii=False), "", "TASKS",
-        "1. Identity. Decide whether the signals describe one person or several people who share the name, and whether the person has moved to a different company than the rep entered.",
-        '   status = "confirmed" (one person, same company), "role_changed" (same person, now at a different company — give the NEW company and role in current), or "ambiguous" (two or more different people). For ambiguous, group signal ids into clusters, one per person, each with a short label like "Finance Director, Northwind Logistics (Pune)". Include at most 5 clusters, and only people whose title matches the role the rep entered (or a close finance/operations equivalent); ignore namesakes in unrelated jobs.',
-        "2. Persona. From the person's CURRENT role: function (finance | operations | other), seniority (executive | senior | manager | individual), buyer_fit 0..1 (1 = owns or strongly influences finance/ops tooling decisions; an analyst, associate, engineer or salesperson is below 0.3), why (one sentence), and better_contact: the title the rep should ask for instead if buyer_fit is low (empty otherwise).",
-        "3. For every signal, score:",
+        "1. Persona. From the person's role as entered: function (finance | operations | other), seniority (executive | senior | manager | individual), buyer_fit 0..1 (1 = owns or strongly influences finance/ops tooling decisions; an analyst, associate, engineer or salesperson is below 0.3), why (one sentence), and better_contact: the title the rep should ask for instead if buyer_fit is low (empty otherwise).",
+        "2. For every signal, score:",
         "   pain: 0..1 per axis — how strongly this signal suggests that pain exists right now at the prospect's company (0 = unrelated).",
         "   valence: -1..1 — is this event bad news for the company or person (layoffs, losses, lawsuits, fraud, regulatory penalties, auditor resignations = negative; routine or planned leadership changes, appointments and reshuffles are neutral, about 0; funding, launches, promotions = positive).",
         "   person_fit: 0..1 — is this about this person's own words, work or function (1) versus general company news (low).",
         "   specificity: 0..1 — would this detail be true of almost any company (0) or is it unique to them (1).",
-        '   relates_to: "current_role" | "previous_role" (about an employer they have left) | "other_person" (about someone else with the same name) | "general" | "unrelated" (a headline that is not about this prospect or their company at all, e.g. a different company or a generic article).',
+        '   relates_to: "current_role" (about the prospect or the company the rep entered) | "unrelated" (about a different person who happens to share the name, a different company, or a generic article).',
         "   why: at most 8 words.", "", "Give an entry for EVERY signal id. Reply with only JSON in this exact shape:",
-        '{"identity":{"status":"confirmed","confidence":0.9,"current":{"name":"","company":"","role":""},"clusters":[{"id":"A","label":"","company":"","role":"","signal_ids":["s1"]}],"note":""},"persona":{"function":"finance","seniority":"executive","buyer_fit":0.9,"why":"","better_contact":""},"signals":[{"id":"s1","pain":{"ap":0,"close":0,"onboard":0,"disputes":0,"scale":0,"controls":0},"valence":0,"person_fit":0,"specificity":0,"relates_to":"current_role","why":""}]}',
+        '{"persona":{"function":"finance","seniority":"executive","buyer_fit":0.9,"why":"","better_contact":""},"signals":[{"id":"s1","pain":{"ap":0,"close":0,"onboard":0,"disputes":0,"scale":0,"controls":0},"valence":0,"person_fit":0,"specificity":0,"relates_to":"current_role","why":""}]}',
     ]
     return "\n".join(L)
 
@@ -549,7 +530,6 @@ def draft_prompt(seller, target, decision, choice, scored, critique=""):
         ("- TONE: careful. This company has recent bad news. No congratulations, no 'growth', 'exciting' or 'scale' framing, and never mention the bad news. Be gentle, brief and lower-pressure." if careful
          else "- TONE: courteous and professional. If the hook is their new appointment, begin with a brief, sincere congratulations."),
         "" if (choice["supporting"] or mode in ("fallback", "redirect")) else "- Only one source backs this, so phrase the point as a question, not a statement.",
-        f"- They recently started at {target['company']}. Congratulate them on the new role in a few words and write only about the new company; never mention their previous employer's news." if decision.get("retargeted") else "",
         f"\nA PREVIOUS DRAFT FAILED REVIEW. Fix this: {critique}" if critique else "", "",
         'List every factual claim about the prospect or their company with the id of the signal it comes from. Claims about Zamp use signal_id "seller".',
         'Reply with only JSON: {"subject":"best subject","subject_alternatives":["a different subject","another different subject"],"body":"","claims":[{"text":"","signal_id":"s1"}]}',
@@ -895,7 +875,7 @@ def describe_error(e):
 
 
 def run_pipeline(run, on_update):
-    """Stages 1-4. Returns early (status awaiting_rep) if two people share the name; call resume_pipeline next."""
+    """Runs every stage: intake, research, scoring, rules, draft, quality gates."""
     def setst(sid, **patch):
         st = run["stages"][sid]
         if patch.get("status") == "running":
@@ -931,70 +911,21 @@ def run_pipeline(run, on_update):
         signals = with_dates(signals, now)[:18]
         setst("research", status="done" if signals else "warn", data={"events": events, "signals": signals, "profile": run["profile"], "stats": run.get("researchStats")})
 
-        setst("identity", status="running")
         setst("score", status="running")
-        analysis = {"identity": {"status": "confirmed", "confidence": 0.3, "clusters": []}, "signals": []}
-        if signals or run["profile"]:
+        analysis = {"signals": []}
+        if signals:
             ap = analyze_prompt(run["input"], signals, run["profile"], run["seller"])
             analysis = _as_analysis(ai_json(ap, temperature=0))
             if not analysis.get("signals"):
                 analysis = _as_analysis(ai_json(ap, temperature=0))
         run["persona"] = analysis.get("persona")
-        identity = analysis.get("identity")
-        cur = identity.get("current") or {}
-        moved_to = (cur.get("company") or "").strip()
-        if (identity.get("status") == "role_changed" and moved_to and run["researchMode"] != "fixture" and not run.get("_second_pass")
-                and moved_to.lower() not in (run["input"].get("company") or "").lower()):
-            run["_second_pass"] = True
-            log("info", f"Looks like they moved to {moved_to}. Researching the new company too…")
-            first = {x["id"]: x for x in score_signals(signals, analysis)}
-            keep = [x for x in signals if first.get(x["id"], {}).get("relatesTo") not in ("previous_role", "unrelated", "other_person")]
-            res2 = research({**run["input"], "company": moved_to, "role": cur.get("role") or run["input"].get("role")}, log, run["seller"], fresh=run.get("fresh", False))
-            have = {x["url"] for x in keep}
-            extra = [{**x, "provenance": "web"} for x in res2["signals"] if x["url"] not in have]
-            merged = [{k: v for k, v in x.items() if k != "id"} for x in keep + extra]
-            signals = with_dates(merged, now)[:18]
-            setst("research", status="done", data={"events": events, "signals": signals, "profile": run["profile"], "stats": run.get("researchStats")})
-            analysis = _as_analysis(ai_json(analyze_prompt(run["input"], signals, run["profile"], run["seller"]), temperature=0))
-            run["persona"] = analysis.get("persona")
-            identity = analysis.get("identity")
-            if identity.get("status") != "role_changed":
-                identity = {**identity, "status": "role_changed", "current": cur}
         scored = score_signals(signals, analysis)
         n_un = sum(1 for x in scored if x["relatesTo"] == "unrelated")
         if n_un:
             scored = [x for x in scored if x["relatesTo"] != "unrelated"]
             log("info", f"Set aside {n_un} headline(s) that weren't about this prospect or their company.")
-        run["_ctx"] = {"scored": scored, "identity": identity}
-        if identity.get("status") == "ambiguous" and isinstance(identity.get("clusters"), list) and len(identity["clusters"]) > 1:
-            setst("identity", status="paused", data={"identity": identity, "waiting": True})
-            run["status"] = "awaiting_rep"
-            on_update(run)
-            return run
-        setst("identity", status="warn" if identity.get("status") == "role_changed" else "done", data={"identity": identity})
+        run["_ctx"] = {"scored": scored}
         setst("score", status="done", data={"scored": scored})
-        return finish_pipeline(run, on_update)
-    except Exception as e:
-        return _fail(run, e, on_update)
-
-
-def resume_pipeline(run, cluster_id, on_update):
-    ctx = run["_ctx"]
-    identity, scored = ctx["identity"], ctx["scored"]
-    cluster = next((c for c in identity["clusters"] if c.get("id") == cluster_id), identity["clusters"][0])
-    keep = {str(x) for x in cluster.get("signal_ids", [])}
-    scored = [s if str(s["id"]) in keep else {**s, "eligible": False, "relatesTo": "other_person", "flags": s["flags"] + ["different person"]} for s in scored]
-    run["status"] = "running"
-    identity["resolvedBy"], identity["chosen"] = "rep", cluster
-    m = re.search(r",\s*([^(]+?)\s*(\(|$)", cluster.get("label") or "")
-    company = cluster.get("company") or (m.group(1).strip() if m else run["input"].get("company"))
-    identity["current"] = {"name": run["input"]["name"], "company": company, "role": cluster.get("role") or run["input"].get("role")}
-    identity["status"] = "confirmed_by_rep"
-    run["stages"]["identity"].update(status="done", data={"identity": identity, "waiting": False})
-    run["stages"]["score"].update(status="done", data={"scored": scored})
-    run["_ctx"]["scored"] = scored
-    on_update(run)
-    try:
         return finish_pipeline(run, on_update)
     except Exception as e:
         return _fail(run, e, on_update)
@@ -1019,10 +950,10 @@ def finish_pipeline(run, on_update):
         st.update(patch)
         on_update(run)
     now = run["_now"]
-    scored, identity = run["_ctx"]["scored"], run["_ctx"]["identity"]
+    scored = run["_ctx"]["scored"]
     setst("rules", status="running")
     choice = choose_hook(scored)
-    decision = apply_rules(run["input"], scored, choice, identity, now, run.get("persona"))
+    decision = apply_rules(run["input"], scored, choice, None, now, run.get("persona"))
     slim = {"anchor": choice["anchor"], "hookId": choice["hook"]["id"] if choice["hook"] else None, "supportingIds": [s["id"] for s in choice["supporting"]],
             "strengths": choice["strengths"], "ranked": choice["ranked"], "separation": choice["separation"], "strongCount": choice["strongCount"]}
     setst("rules", status="warn" if decision["mode"] == "fallback" or decision["status"] == "hold" else "done", data={"choice": slim, "decision": decision})

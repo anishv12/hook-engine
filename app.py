@@ -150,23 +150,11 @@ def show_run(run, key, readonly=False):
         if stats:
             st.caption(f"{stats.get('webSearches', 0)} searches · {stats.get('pagesSeen', 0)} headlines read · {stats.get('seconds', '?')}s")
 
-    if run["status"] == "awaiting_rep" and not readonly:
-        ident = run["stages"]["identity"]["data"]["identity"]
-        st.warning("Several different people match this name. Which one did you mean?")
-        opts = {c["id"]: c.get("label") or c["id"] for c in ident["clusters"]}
-        pick = st.radio("Who is it?", list(opts), format_func=lambda i: opts[i], key=f"pick_{key}")
-        if st.button("Continue with this person", type="primary", key=f"cont_{key}"):
-            finish(E.resume_pipeline(run, pick, lambda r: render_progress(r, step_ph)))
-            st.rerun()
-        return
-
     res = run.get("result")
     if not res:
         return
     d, dec, q = res["draft"], res["decision"], res["quality"]
 
-    if dec.get("retargeted"):
-        st.info(f"Retargeted: {inp['name']} now works at **{dec['target']['company']}** (you entered {inp.get('company')}).")
     if run["status"] == "hold":
         st.warning(f"Held until {dec['holdUntil']}: bad news inside the last 30 days. Tone is careful if you send later.")
     for w in dec["warnings"]:
@@ -249,27 +237,27 @@ with tab_new:
     if mode_single == "One prospect":
         a, b, c = st.columns(3)
         a.text_input("Name", key="f_name", placeholder="e.g. Priya Sharma")
-        b.text_input("Company (optional)", key="f_company", placeholder="e.g. Acme Logistics")
+        b.text_input("Company", key="f_company", placeholder="e.g. Acme Logistics")
         c.text_input("Role", key="f_role", placeholder="e.g. CFO")
         st.text_input("Notes (where you met, context)", key="f_notes")
         st.text_input("LinkedIn URL (optional, never scraped; just given to the search as a hint)", key="f_linkedin")
         fresh = st.checkbox("Fresh research (skip the 24h cache)")
         if st.button("Run", type="primary", disabled=not has_key):
             inp = get_run_input()
-            if not inp["name"]:
-                st.error("Enter a name.")
+            if not inp["name"] or not inp["company"]:
+                st.error("Enter the name and the company. Without a company the search can't tell people with the same name apart.")
             elif E.runs_today() >= limit:
                 st.error("Daily run limit reached.")
             else:
                 run_one(inp, fresh)
                 st.rerun()
     else:
-        st.caption("CSV columns: name, company, role, notes (company/role/notes optional). Up to 50 rows. Each is researched live; drafts land in the Dashboard.")
+        st.caption("CSV columns: name, company (both required), role, notes. Rows without a company are skipped. Up to 50 rows. Each is researched live; drafts land in the Dashboard.")
         up = st.file_uploader("CSV file", type="csv")
         if up and st.button("Run the list", type="primary", disabled=not has_key):
             rows = list(csv.DictReader(io.StringIO(up.getvalue().decode("utf-8-sig"))))[:50]
             rows = [{k.strip().lower(): (v or "").strip() for k, v in r.items() if k} for r in rows]
-            rows = [r for r in rows if r.get("name")]
+            rows = [r for r in rows if r.get("name") and r.get("company")]
             bar = st.progress(0.0, text=f"0 / {len(rows)}")
             for i, r in enumerate(rows):
                 if E.runs_today() >= limit:
