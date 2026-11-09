@@ -35,13 +35,14 @@ st.set_page_config(page_title="Hook Engine", page_icon="🎣", layout="wide", in
 VERDICT = {
     "ready": ("READY FOR REVIEW", "ok", "Grounded hook, passed every gate. A person approves before anything leaves."),
     "needs_edit": ("NEEDS AN EDIT", "warn", "A quality gate flagged something. Fix it in the editor before approving."),
-    "no_send": ("DON'T SEND YET", "bad", "No fresh, relevant signal to hang an email on. A generic email would be worse than none."),
+    "no_send": ("DON'T SEND YET", "bad", "No fresh, relevant signal to hang an email on, so no draft was written. A generic email would be worse than none."),
     "hold": ("HELD", "hold", "Recent bad news around this account. Wait before reaching out."),
     "redirect": ("ASK FOR A REFERRAL", "info", "Not the finance owner. The draft asks them to point us to the right person."),
+    "no_info": ("NO INFO FOUND", "bad", "Nothing usable was found about this person or company, so no email was drafted."),
     "error": ("ERROR", "bad", "The run failed."),
     "running": ("RUNNING", "info", "Working through the pipeline."),
 }
-PILL = {"ready": "Ready", "needs_edit": "Needs edit", "no_send": "Don't send", "hold": "Held", "redirect": "Referral", "error": "Error", "running": "Running"}
+PILL = {"ready": "Ready", "needs_edit": "Needs edit", "no_send": "Don't send", "hold": "Held", "redirect": "Referral", "no_info": "No info", "error": "Error", "running": "Running"}
 
 CSS = """
 <style>
@@ -79,6 +80,8 @@ header[data-testid="stHeader"]{background:transparent}
 .node.done .dot{background:var(--amber);border-color:var(--amber);color:#04122b;font-weight:600}
 .node.warn .dot{background:var(--hold);border-color:var(--hold);color:#150a22;font-weight:600}
 .node.error .dot{background:var(--bad);border-color:var(--bad);color:#2a0606}
+.node.skipped .dot{background:transparent;border-style:dashed;color:var(--mute)}
+.node.skipped .lbl{color:var(--mute);font-weight:500;text-decoration:line-through;text-decoration-color:var(--line)}
 .node.paused .dot{background:var(--info);border-color:var(--info);color:#06142a}
 .node.running .dot{border-color:var(--amber);color:var(--amber);animation:pulse 1.3s infinite}
 @keyframes pulse{0%,100%{box-shadow:0 0 0 0 rgba(77,155,255,.55)}50%{box-shadow:0 0 0 9px rgba(77,155,255,0)}}
@@ -216,6 +219,8 @@ def node_note(run, sid, st_):
             return "working…"
         if st_["status"] == "pending":
             return ""
+        if st_["status"] == "skipped":
+            return "not needed"
         d = st_.get("data") or {}
         res = run.get("result") or {}
         if sid == "intake":
@@ -264,8 +269,8 @@ def render_progress(run, ph, tail=True):
         elif status == "paused":
             cls, dot = "paused", "?"
         else:
-            cls = status if status in ("done", "warn", "error", "running") else "pending"
-            dot = {"done": "✓", "warn": "!", "error": "✕"}.get(status, f"{i + 1:02d}")
+            cls = status if status in ("done", "warn", "error", "running", "skipped") else "pending"
+            dot = {"done": "✓", "warn": "!", "error": "✕", "skipped": "–"}.get(status, f"{i + 1:02d}")
         t = f" · {st_['ms'] / 1000:.1f}s" if st_.get("ms") else ""
         lis.append(f'<li class="node {cls}"><span class="dot">{dot}</span><span class="lbl">{html.escape(label)}</span>'
                    f'<span class="note">{html.escape(node_note(run, sid, st_))}{t}</span></li>')
@@ -316,23 +321,39 @@ def show_run(run, key, readonly=False):
         stats = run.get("researchStats")
         if stats:
             st.caption(f"{stats.get('webSearches', 0)} searches · {stats.get('pagesSeen', 0)} headlines read · {stats.get('seconds', '?')}s")
-    if not res:
+    if not res and run["status"] != "no_info":
+        return
+    if not res:  # nothing found at all
+        st.markdown(
+            f'<div class="verdict {tone}"><div class="stamp">{stamp}</div><div class="vtxt"><div class="who">{esc(inp["name"])} · {esc(inp.get("company"))}</div>'
+            f'<div class="why">{esc(run.get("noDraftReason") or meaning)}</div></div></div>', unsafe_allow_html=True)
         return
     d, dec, q = res["draft"], res["decision"], res["quality"]
-    sc = run["stages"]["score"]["data"]["scored"]
-    hook_id = res["choice"].get("hookId")
+    sc = (run["stages"]["score"].get("data") or {}).get("scored") or []
+    hook_id = (res.get("choice") or {}).get("hookId")
     fired = [r for r in dec["log"] if r["fired"]]
-    why = fired[0]["text"] if fired else meaning
+    why = run.get("noDraftReason") if not d else (fired[0]["text"] if fired else meaning)
     if run["status"] == "hold":
-        why = f"Held until {dec['holdUntil']}: bad news inside the last 30 days. Tone is careful if you send later."
-    words = len(d["body"].split())
+        why = f"Held until {dec['holdUntil']}: bad news inside the last 30 days." + (" Tone is careful if you send later." if d else " No draft was written.")
+    metas = (f'<div class="metas"><div class="meta"><div class="v">{q["personalisation"]:.2f}</div><div class="l">personal</div></div>'
+             f'<div class="meta"><div class="v">{len(d["body"].split())}</div><div class="l">words</div></div>'
+             f'<div class="meta"><div class="v">{len(fired)}</div><div class="l">rules fired</div></div></div>') if d else \
+        f'<div class="metas"><div class="meta"><div class="v">{len(fired)}</div><div class="l">rules fired</div></div></div>'
     st.markdown(
         f'<div class="verdict {tone}"><div class="stamp">{stamp}</div><div class="vtxt"><div class="who">{esc(inp["name"])} · {esc(dec["target"].get("company") or inp.get("company"))}</div>'
-        f'<div class="why">{esc(why)}</div></div><div class="metas"><div class="meta"><div class="v">{q["personalisation"]:.2f}</div><div class="l">personal</div></div>'
-        f'<div class="meta"><div class="v">{words}</div><div class="l">words</div></div>'
-        f'<div class="meta"><div class="v">{len(fired)}</div><div class="l">rules fired</div></div></div></div>', unsafe_allow_html=True)
+        f'<div class="why">{esc(why)}</div></div>{metas}</div>', unsafe_allow_html=True)
     for w in dec["warnings"]:
         st.caption("⚠ " + w)
+
+    if not d:  # stopped before drafting: show what was found and which rule stopped it
+        st.markdown('<div class="sec">What the research found</div>', unsafe_allow_html=True)
+        rows = "".join(f'<div class="ground"><span class="gn">{i}</span><div><div class="c">{esc(x["title"])}</div><div class="s">{esc(x.get("date") or "undated")} · relevance {x["relevance"]:.2f} · freshness {x["freshness"]:.2f} · score {x["score"]:.2f}</div></div></div>'
+                       for i, x in enumerate(sorted(sc, key=lambda x: -x["score"])[:6], 1))
+        st.markdown(f'<div class="grounds">{rows or "<div class=empty>No headlines to show.</div>"}</div>', unsafe_allow_html=True)
+        st.markdown('<div class="sec">Guardrails · AI judges, code decides</div>', unsafe_allow_html=True)
+        rules = "".join(f'<div class="rule {"fired" if r["fired"] else ""}"><span class="rd"></span><div><span class="rn">{esc(r["rule"])}</span><div class="rx">{esc(r["text"])}</div></div></div>' for r in dec["log"])
+        st.markdown(f'<div class="card">{rules}</div>', unsafe_allow_html=True)
+        return
 
     left, right = st.columns([1.2, 1], gap="large")
     with left:
@@ -518,7 +539,7 @@ with tab_dash:
               (f"{sum(pers) / len(pers):.2f}" if pers else "–", "Avg personalisation"), (f"{approved} / {stopped}", "Approved / stopped by a rule")]
         st.markdown('<div class="kpis">' + "".join(f'<div class="kpi"><div class="v">{v}</div><div class="l">{l}</div></div>' for v, l in kp) + "</div>", unsafe_allow_html=True)
 
-        colors = {"ready": "var(--ok)", "needs_edit": "var(--amber)", "no_send": "var(--bad)", "hold": "var(--hold)", "redirect": "var(--info)", "error": "#777"}
+        colors = {"ready": "var(--ok)", "needs_edit": "var(--amber)", "no_send": "var(--bad)", "hold": "var(--hold)", "redirect": "var(--info)", "no_info": "var(--bad)", "error": "#777"}
         dist = "".join(f'<b style="width:{n / len(runs) * 100:.1f}%;background:{colors.get(s, "#777")}"></b>' for s, n in counts.items())
         leg = "".join(f'<span><i style="background:{colors.get(s, "#777")}"></i>{PILL.get(s, s)} · {n}</span>' for s, n in counts.items())
         st.markdown(f'<div class="card"><div class="h">Where the runs ended up</div><div class="dist">{dist}</div><div class="dleg">{leg}</div></div>', unsafe_allow_html=True)

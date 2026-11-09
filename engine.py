@@ -420,7 +420,7 @@ def apply_rules(inp, scored, choice, identity, now, persona):
         if out["mode"] != "redirect":
             out["mode"], out["status"] = "fallback", "no_send"
         best = f"{hook['score']:.2f}, relevance {hook['relevance']:.2f}, freshness {hook['freshness']:.2f}" if hook else "none"
-        tail = "The referral note stays company-level." if out["mode"] == "redirect" else "Nothing personal is strong enough to lead with, so the draft uses a light, company-level angle and the run is marked \"Don't send yet\"."
+        tail = "The referral note stays company-level." if out["mode"] == "redirect" else "Nothing personal is strong enough to lead with, so no email is drafted and the run is marked \"Don't send yet\"."
         log.append({"rule": "R2 · Thin signal", "fired": True, "text": f"No signal is recent (under ~7 months), scores {HOOK_THRESHOLD}+ and points at a pain the seller solves (best: {best}). {tail}"})
     else:
         log.append({"rule": "R2 · Thin signal", "fired": False, "text": f"{choice['strongCount']} signal(s) clear the {HOOK_THRESHOLD} bar and point at a pain. Leading with \"{hook['title']}\" ({hook['score']:.2f})."})
@@ -963,6 +963,9 @@ def run_pipeline(run, on_update):
             run["researchStats"] = res.get("stats")
         signals = with_dates(signals, now)[:18]
         setst("research", status="done" if signals else "warn", data={"events": events, "signals": signals, "profile": run["profile"], "stats": run.get("researchStats")})
+        if not signals:
+            log("info", "No headlines found for this person or company.")
+            return stop_without_draft(run, "no_info", "No information found about this person or company on the web, so no email was drafted. Check the spelling of the name and company, or try a better-known company.", on_update)
 
         setst("score", status="running")
         analysis = {"signals": []}
@@ -979,9 +982,24 @@ def run_pipeline(run, on_update):
             log("info", f"Set aside {n_un} headline(s) that weren't about this prospect or their company.")
         run["_ctx"] = {"scored": scored}
         setst("score", status="done", data={"scored": scored})
+        if not scored:
+            return stop_without_draft(run, "no_info", "Every headline found was about someone or something else, so there is nothing reliable to write from. No email was drafted.", on_update)
         return finish_pipeline(run, on_update)
     except Exception as e:
         return _fail(run, e, on_update)
+
+
+def stop_without_draft(run, status, message, on_update, decision=None, slim=None):
+    """Research was inadequate: skip the remaining stages and produce NO email."""
+    for sid in ("score", "rules", "draft", "quality", "review"):
+        st = run["stages"][sid]
+        if st["status"] in ("pending", "running"):
+            st["status"] = "skipped"
+    run["noDraftReason"] = message
+    run["result"] = {"draft": None, "quality": None, "decision": decision, "choice": slim, "target": (decision or {}).get("target") or run["input"], "status": status} if decision else None
+    run["status"] = status
+    on_update(run)
+    return run
 
 
 def _fail(run, e, on_update):
@@ -1010,6 +1028,10 @@ def finish_pipeline(run, on_update):
     slim = {"anchor": choice["anchor"], "hookId": choice["hook"]["id"] if choice["hook"] else None, "supportingIds": [s["id"] for s in choice["supporting"]],
             "strengths": choice["strengths"], "ranked": choice["ranked"], "separation": choice["separation"], "strongCount": choice["strongCount"]}
     setst("rules", status="warn" if decision["mode"] == "fallback" or decision["status"] == "hold" else "done", data={"choice": slim, "decision": decision})
+
+    if decision["mode"] == "fallback":
+        return stop_without_draft(run, decision["status"] if decision["status"] in ("hold", "no_send") else "no_send",
+                                  "The research did not turn up anything recent and relevant enough to personalise an email, so no draft was written. A generic email would do more harm than good.", on_update, decision, slim)
 
     allowed = {str(s["id"]) for s in scored if s["eligible"]}
     hook = choice["hook"]
