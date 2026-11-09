@@ -1059,9 +1059,10 @@ def suggest_contacts(inp, limit=4):
     if not items:
         return wiki_out[:limit]
     lines = "\n".join(f"[{i}] {it['title']} ({it['date'] or 'undated'}) {it['snippet'][:140]}" for i, it in enumerate(items))
-    prompt = (f"These are news headlines about {company}. List up to 6 real people named in them who currently hold a senior role at {company} (finance, operations, "
-              f"accounts, treasury, or the CEO/COO/founder). Exclude {inp['name']}. Only use names and roles written in the headline text; never guess. "
-              'Reply with only JSON: [{"name":"","role":"","id":0}] where id is the headline number. Return [] if there are none.\n\n' + lines)
+    prompt = (f"These are news headlines about {company}. List up to 6 real people named in them who work AT {company} right now in a senior role (finance, operations, "
+              f"accounts, treasury, or the CEO/COO/founder). Exclude {inp['name']}. Exclude former employees, people who left or joined another company, investors, analysts, "
+              f"customers and anyone whose employer is not {company}. Only use names and roles written in the headline text; never guess. "
+              'Reply with only JSON: [{"name":"","role":"","employer":"","id":0}] where employer is the company they work at according to the headline and id is the headline number. Return [] if there are none.\n\n' + lines)
     try:
         got = ai_json(prompt, tier="quick", temperature=0)
     except Exception:
@@ -1076,6 +1077,9 @@ def suggest_contacts(inp, limit=4):
             continue
         parts = re.findall(r"[A-Za-z]{3,}", name)
         hay = (it["title"] + " " + it["snippet"]).lower()
+        emp = {w for w in re.findall(r"[a-z0-9]{4,}", str(g.get("employer") or "").lower()) if w not in stop}
+        if re.search(r"former(ly)?|ex-|leaves?|left|resign|quits?|step(s|ped) down", hay) or (toks and not (emp & toks)):
+            continue
         if not parts or parts[-1].lower() not in hay or (me and parts[-1].lower() == me) or name.lower() in names:
             continue
         names.add(name.lower())
