@@ -1024,6 +1024,19 @@ def wiki_key_people(company):
         return []
 
 
+def _indian_names_only(people):
+    """Keep only people whose names look Indian (a name-based guess by the model; it can be wrong, so it only filters suggestions)."""
+    if not people:
+        return people
+    listing = "\n".join(f"{i}: {x['name']}" for i, x in enumerate(people))
+    try:
+        got = ai_json('Which of these names are typically Indian names? Reply with only JSON: {"indian":[indexes]}.\n\n' + listing, tier="quick", temperature=0)
+        keep = {int(i) for i in (got.get("indian") if isinstance(got, dict) else got) or []}
+    except Exception:
+        return people
+    return [x for i, x in enumerate(people) if i in keep]
+
+
 def suggest_contacts(inp, limit=4):
     """When we stop without a draft: other senior people at the same company, taken only from news headlines (never invented).
     One search sweep for finance/leadership news, then one cheap AI call to read names and roles out of the headlines."""
@@ -1086,6 +1099,7 @@ def suggest_contacts(inp, limit=4):
         out.append({"name": name, "role": role, "headline": it["title"][:140], "url": it["url"], "date": it["date"], "source": it["publisher"]})
     fin = re.compile(r"financ|cfo|account|treasur|control|audit|operations|coo", re.I)
     out = wiki_out + out
+    out = _indian_names_only(out)
     out.sort(key=lambda x: (0 if fin.search(x["role"]) else 1))
     return out[:limit]
 

@@ -311,18 +311,27 @@ def esc(x):
     return html.escape(str(x if x is not None else ""))
 
 
-def show_alternatives(run):
-    """Other senior people at the same company, shown when no draft was written."""
+def pick_person(name, company, role):
+    """Click on a suggested contact: fill the form and start the search."""
+    st.session_state.update({"f_name": name, "f_company": company, "f_role": role, "f_notes": "", "f_linkedin": "",
+                             "mode_sel": "One prospect", "_autorun": True})
+
+
+def show_alternatives(run, key, readonly=False):
+    """Other senior people at the same company, shown when no draft was written. Clicking a name researches them."""
     alts = run.get("alternatives") or []
     co = run["input"].get("company") or "this company"
     st.markdown(f'<div class="sec">Other people at {esc(co)} you could reach out to</div>', unsafe_allow_html=True)
     if not alts:
         st.markdown('<div class="empty" style="padding:1.2rem">No other names turned up in public news for this company.</div>', unsafe_allow_html=True)
         return
-    cards = "".join(
-        f'<div class="person"><div class="av">{esc(a["name"][:1])}</div><div><div class="pn">{esc(a["name"])}</div><div class="pr">{esc(a["role"])}</div>'
-        f'<div class="ps"><a href="{esc(a["url"])}" target="_blank">{esc(a["source"] or "source")}</a>{" · " + esc(a["date"]) if a.get("date") else ""}</div></div></div>' for a in alts)
-    st.markdown(f'<div class="people">{cards}</div><div style="color:var(--mute);font-size:.75rem;margin-top:.4rem">Names and roles come from public news and Wikipedia. Check the role is still current before reaching out.</div>', unsafe_allow_html=True)
+    cols = st.columns(min(len(alts), 3))
+    for i, a in enumerate(alts):
+        with cols[i % len(cols)]:
+            st.markdown(f'<div class="person"><div class="av">{esc(a["name"][:1])}</div><div><div class="pn">{esc(a["name"])}</div><div class="pr">{esc(a["role"])}</div></div></div>', unsafe_allow_html=True)
+            if not readonly:
+                st.button("Research this person  →", key=f"alt_{key}_{i}", on_click=pick_person, args=(a["name"], co, a["role"]), use_container_width=True)
+    st.caption("Click a name to fill the form and run the search. Check the role is still current before reaching out." if not readonly else "Names come from public news and Wikipedia.")
 
 
 def show_run(run, key, readonly=False):
@@ -345,7 +354,7 @@ def show_run(run, key, readonly=False):
         st.markdown(
             f'<div class="verdict {tone}"><div class="stamp">{stamp}</div><div class="vtxt"><div class="who">{esc(inp["name"])} · {esc(inp.get("company"))}</div>'
             f'<div class="why">{esc(run.get("noDraftReason") or meaning)}</div></div></div>', unsafe_allow_html=True)
-        show_alternatives(run)
+        show_alternatives(run, key, readonly)
         return
     d, dec, q = res["draft"], res["decision"], res["quality"]
     sc = (run["stages"]["score"].get("data") or {}).get("scored") or []
@@ -372,7 +381,7 @@ def show_run(run, key, readonly=False):
         st.markdown('<div class="sec">Guardrails · AI judges, code decides</div>', unsafe_allow_html=True)
         rules = "".join(f'<div class="rule {"fired" if r["fired"] else ""}"><span class="rd"></span><div><span class="rn">{esc(r["rule"])}</span><div class="rx">{esc(r["text"])}</div></div></div>' for r in dec["log"])
         st.markdown(f'<div class="card">{rules}</div>', unsafe_allow_html=True)
-        show_alternatives(run)
+        show_alternatives(run, key, readonly)
         return
 
     left, right = st.columns([1.2, 1], gap="large")
@@ -487,7 +496,7 @@ with tab_new:
     for k in ("f_name", "f_company", "f_role", "f_notes", "f_linkedin"):
         st.session_state.setdefault(k, "")
 
-    mode_single = st.radio("Mode", ["One prospect", "A list (Excel / CSV)"], horizontal=True, label_visibility="collapsed")
+    mode_single = st.radio("Mode", ["One prospect", "A list (Excel / CSV)"], horizontal=True, label_visibility="collapsed", key="mode_sel")
     if mode_single == "One prospect":
         with st.container(key="form_one"):
             st.markdown('<div class="ft serif" style="font-size:1.25rem">Who are we writing to?</div><div style="color:var(--mute);font-size:.85rem;margin-bottom:.6rem">Name and company are enough. A role and a note make the email sharper.</div>', unsafe_allow_html=True)
@@ -500,6 +509,8 @@ with tab_new:
             n2.text_input("🔗  LinkedIn (optional, never scraped)", key="f_linkedin", placeholder="linkedin.com/in/…")
             fresh = st.checkbox("Fresh research (skip the 24h cache)")
             go = st.button("Run the engine  →", type="primary", disabled=not has_key)
+        if st.session_state.pop("_autorun", False):
+            go = True
         if go:
             inp = get_run_input()
             if not inp["name"] or not inp["company"]:
