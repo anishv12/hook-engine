@@ -417,10 +417,13 @@ def apply_rules(inp, scored, choice, identity, now, persona):
     # R2 thin signal
     hook = choice["hook"]
     if not hook or hook["score"] < HOOK_THRESHOLD or hook["relevance"] < MIN_RELEVANCE or hook["freshness"] < MIN_HOOK_FRESHNESS or choice["strongCount"] == 0:
+        has_notes = bool((inp.get("notes") or "").strip())
         if out["mode"] != "redirect":
-            out["mode"], out["status"] = "fallback", "no_send"
+            out["mode"] = "fallback"
+            if not has_notes:
+                out["status"] = "no_send"
         best = f"{hook['score']:.2f}, relevance {hook['relevance']:.2f}, freshness {hook['freshness']:.2f}" if hook else "none"
-        tail = "The referral note stays company-level." if out["mode"] == "redirect" else "Nothing personal is strong enough to lead with, so no email is drafted and the run is marked \"Don't send yet\"."
+        tail = "The referral note stays company-level." if out["mode"] == "redirect" else "The news is thin, but you gave context, so the email is built on that instead." if has_notes else "Nothing personal is strong enough to lead with, so no email is drafted and the run is marked \"Don't send yet\"."
         log.append({"rule": "R2 · Thin signal", "fired": True, "text": f"No signal is recent (under ~7 months), scores {HOOK_THRESHOLD}+ and points at a pain the seller solves (best: {best}). {tail}"})
     else:
         log.append({"rule": "R2 · Thin signal", "fired": False, "text": f"{choice['strongCount']} signal(s) clear the {HOOK_THRESHOLD} bar and point at a pain. Leading with \"{hook['title']}\" ({hook['score']:.2f})."})
@@ -470,6 +473,13 @@ _BANNED = ["hope this finds you well", "reaching out", "i wanted to", "given tha
 
 
 _SUBJECT_BANNED = ["finance operations", "financial operations", "finance function", "streamline", "efficiency", "scaling", "opportunity", "partnership", "quick question", "maintaining", "managing", "support for"]
+
+
+def note_words(notes, target):
+    """Distinctive words from the rep's own context that a draft built on it should echo."""
+    skip = {w.lower() for w in re.findall(r"[A-Za-z]{3,}", f"{target.get('name', '')} {target.get('company', '')}")}
+    stop = {"with", "that", "this", "from", "have", "about", "their", "there", "were", "been", "they", "them", "your", "what", "when", "will", "also", "into", "met", "meet", "talked", "spoke"}
+    return {w for w in re.findall(r"[a-z0-9]{4,}", (notes or "").lower()) if w not in skip and w not in stop}
 
 
 def hook_words(hook, target):
@@ -555,6 +565,14 @@ def draft_prompt(seller, target, decision, choice, scored, critique=""):
         sup = " | ".join(f"[{s['id']}] {s['title']} — {s['detail']}" for s in choice["supporting"]) or "none"
         task = f"PAIN IT POINTS AT: {anchor_label(choice['anchor'])}.\nLEAD HOOK [{hook['id']}]: {hook['title']} — {hook['detail']} ({da(hook)})\nSUPPORTING: {sup}"
         words = "60 to 100"
+    notes = (target.get("notes") or "").strip()
+    if notes and mode == "redirect":
+        task += f" The sender also noted: \"{notes}\". Mention it briefly and naturally."
+    elif notes:
+        news = (f"OPTIONAL SUPPORTING NEWS (use it only if it clearly fits, in one short clause at most; otherwise ignore it): [{hook['id']}] {hook['title']}" if (hook and mode == "standard") else "No news is needed.")
+        task = ("THE SENDER'S OWN CONTEXT IS THE BASIS OF THIS EMAIL. The sender wrote: \"" + notes + "\". Treat it as true. Open with it naturally (for example how you met, or the topic raised) "
+                "and make it the reason you are writing. Do not add facts beyond it, and do not lean on news articles. " + news)
+        words = "50 to 90"
     careful = decision["tone"] == "careful"
     if decision.get("audience") == "exec":
         cta_lines = [
@@ -582,9 +600,9 @@ def draft_prompt(seller, target, decision, choice, scored, critique=""):
         "- Every fact about the prospect must come from the facts above. No invented metrics, quotes or customers. Never put signal ids like [s2] in the subject or body.",
         ("- TONE: careful. This company has recent bad news. No congratulations, no 'growth', 'exciting' or 'scale' framing, and never mention the bad news. Be gentle, brief and lower-pressure." if careful
          else "- TONE: courteous and professional. If the hook is their new appointment, begin with a brief, sincere congratulations."),
-        "" if (choice["supporting"] or mode in ("fallback", "redirect")) else "- Only one source backs this, so phrase the point as a question, not a statement.",
+        "" if (choice["supporting"] or mode in ("fallback", "redirect") or notes) else "- Only one source backs this, so phrase the point as a question, not a statement.",
         f"\nA PREVIOUS DRAFT FAILED REVIEW. Fix this: {critique}" if critique else "", "",
-        'List every factual claim about the prospect or their company with the id of the signal it comes from. Claims about Zamp use signal_id "seller".',
+        'List every factual claim about the prospect or their company with the id of the signal it comes from. Claims about Zamp use signal_id "seller". Claims taken from the sender context use signal_id "rep".',
         'Reply with only JSON: {"subject":"best subject","subject_alternatives":["a different subject","another different subject"],"body":"","claims":[{"text":"","signal_id":"s1"}]}',
     ]
     return "\n".join(l for l in L if l != "")
@@ -1091,7 +1109,7 @@ def suggest_contacts(inp, limit=4):
         parts = re.findall(r"[A-Za-z]{3,}", name)
         hay = (it["title"] + " " + it["snippet"]).lower()
         emp = {w for w in re.findall(r"[a-z0-9]{4,}", str(g.get("employer") or "").lower()) if w not in stop}
-        if re.search(r"former(ly)?|ex-|leaves?|left|resign|quits?|step(s|ped) down", hay) or (toks and not (emp & toks)):
+        if re.search(r"\bformer(ly)?\b|\bex-|\bleaves?\b|\bleft\b|\bresign|\bquits?\b|\bstep(s|ped) down", hay) or (toks and not (emp & toks)):
             continue
         if not parts or parts[-1].lower() not in hay or (me and parts[-1].lower() == me) or name.lower() in names:
             continue
@@ -1148,11 +1166,14 @@ def finish_pipeline(run, on_update):
             "strengths": choice["strengths"], "ranked": choice["ranked"], "separation": choice["separation"], "strongCount": choice["strongCount"]}
     setst("rules", status="warn" if decision["mode"] == "fallback" or decision["status"] == "hold" else "done", data={"choice": slim, "decision": decision})
 
-    if decision["mode"] == "fallback":
+    notes = (run["input"].get("notes") or "").strip()
+    if decision["mode"] == "fallback" and not notes:
         return stop_without_draft(run, decision["status"] if decision["status"] in ("hold", "no_send") else "no_send",
                                   "The research did not turn up anything recent and relevant enough to personalise an email, so no draft was written. A generic email would do more harm than good.", on_update, decision, slim)
 
     allowed = {str(s["id"]) for s in scored if s["eligible"]}
+    if notes:
+        allowed.add("rep")
     hook = choice["hook"]
     mode = decision["mode"]
     MAX_ATTEMPTS = 4
@@ -1174,7 +1195,11 @@ def finish_pipeline(run, on_update):
         gen = genericness(text)
         ground = groundedness(draft["claims"], allowed)
         words = len(draft["body"].split())
-        used = hook_words(hook, decision["target"]) if (hook and mode not in ("fallback", "redirect")) else set()
+        if notes and mode != "redirect":
+            used = note_words(notes, decision["target"])
+        else:
+            used = hook_words(hook, decision["target"]) if (hook and mode not in ("fallback", "redirect")) else set()
+        src_label = "the context you gave" if notes else "the lead signal"
         hit = sorted(w for w in used if w in text.lower())
         hook_ok = True if not used else bool(hit)
         banned = [b for b in _BANNED if b in text.lower()]
@@ -1190,7 +1215,7 @@ def finish_pipeline(run, on_update):
         p = personalisation(gen["max"], ground["ratio"], hook_ok)
         lo, hi = (30, 90) if mode in ("fallback", "redirect") else (45, 110)
         checks = [
-            {"id": "hook", "label": "Uses the hook", "value": 1 if hook_ok else 0, "pass": hook_ok, "detail": ("Mentions " + ", ".join(hit[:4]) + " from the lead signal.") if hit else ("No lead hook in this mode." if not used else "Never mentions the specific detail from the lead signal.")},
+            {"id": "hook", "label": "Uses the hook", "value": 1 if hook_ok else 0, "pass": hook_ok, "detail": ("Mentions " + ", ".join(hit[:4]) + " from " + src_label + ".") if hit else ("No lead hook in this mode." if not used else "Never mentions the specific detail from " + src_label + ".")},
             {"id": "generic", "label": "Distance from templates", "value": r2(1 - gen["max"]), "pass": gen["max"] < 0.3, "detail": f"Closest generic template similarity {gen['max']:.2f} (bar: under 0.30)."},
             {"id": "ground", "label": "Grounded claims", "value": ground["ratio"], "pass": ground["ratio"] == 1, "detail": f"{len(ground['ungrounded'])} claim(s) not traceable to a signal." if ground["ungrounded"] else f"{len(draft['claims'])} claim(s), all traced to signals.", "ungrounded": ground["ungrounded"]},
             {"id": "voice", "label": "Plain voice", "value": 0 if banned else 1, "pass": not banned, "detail": ("Cliché or leaked tag: " + ", ".join(banned)) if banned else "No banned phrases."},

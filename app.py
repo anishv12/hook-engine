@@ -505,7 +505,7 @@ with tab_new:
             b.text_input("🏢  Company", key="f_company", placeholder="Acme Logistics")
             c.text_input("💼  Role", key="f_role", placeholder="CFO")
             n1, n2 = st.columns(2)
-            n1.text_input("📝  Context (optional)", key="f_notes", placeholder="Met at the finance summit")
+            n1.text_input("📝  Context (optional): the email is built on this", key="f_notes", placeholder="Met at the finance summit; he asked about month-end close")
             n2.text_input("🔗  LinkedIn (optional, never scraped)", key="f_linkedin", placeholder="linkedin.com/in/…")
             fresh = st.checkbox("Fresh research (skip the 24h cache)")
             go = st.button("Run the engine  →", type="primary", disabled=not has_key)
