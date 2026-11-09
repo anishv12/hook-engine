@@ -174,6 +174,10 @@ div[data-testid="stTabs"] button[role="tab"]{font-family:'Fraunces',serif;font-s
 .gate{border-radius:12px!important;padding:.45rem .8rem!important;width:100%}
 .gate span{color:var(--mute);font-size:.72rem}
 .gates{flex-direction:column}
+.people{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:.7rem}
+.person{display:flex;gap:.8rem;align-items:center;background:var(--card);border:1px solid var(--line);border-radius:14px;padding:.8rem .9rem}
+.av{flex:none;width:38px;height:38px;border-radius:50%;background:linear-gradient(135deg,var(--amber),#22d3ee);color:#04122b;font-weight:700;display:grid;place-items:center;font-family:'Fraunces',serif}
+.pn{font-weight:600}.pr{color:var(--mute);font-size:.82rem}.ps{font-size:.72rem;margin-top:.15rem}.ps a{color:var(--amber);text-decoration:none}
 /* inputs */
 .formcard{background:linear-gradient(180deg,var(--card),var(--card2));border:1px solid var(--line);border-radius:20px;padding:1.2rem 1.3rem .4rem;margin-bottom:.8rem}
 .formcard .ft{font-family:'Fraunces',serif;font-size:1.25rem}.formcard .fs{color:var(--mute);font-size:.85rem;margin-bottom:.6rem}
@@ -307,6 +311,20 @@ def esc(x):
     return html.escape(str(x if x is not None else ""))
 
 
+def show_alternatives(run):
+    """Other senior people at the same company, shown when no draft was written."""
+    alts = run.get("alternatives") or []
+    co = run["input"].get("company") or "this company"
+    st.markdown(f'<div class="sec">Other people at {esc(co)} you could reach out to</div>', unsafe_allow_html=True)
+    if not alts:
+        st.markdown('<div class="empty" style="padding:1.2rem">No other names turned up in public news for this company.</div>', unsafe_allow_html=True)
+        return
+    cards = "".join(
+        f'<div class="person"><div class="av">{esc(a["name"][:1])}</div><div><div class="pn">{esc(a["name"])}</div><div class="pr">{esc(a["role"])}</div>'
+        f'<div class="ps"><a href="{esc(a["url"])}" target="_blank">{esc(a["source"] or "source")}</a>{" · " + esc(a["date"]) if a.get("date") else ""}</div></div></div>' for a in alts)
+    st.markdown(f'<div class="people">{cards}</div><div style="color:var(--mute);font-size:.75rem;margin-top:.4rem">Names and roles come from public news and Wikipedia. Check the role is still current before reaching out.</div>', unsafe_allow_html=True)
+
+
 def show_run(run, key, readonly=False):
     inp = run["input"]
     res = run.get("result")
@@ -327,6 +345,7 @@ def show_run(run, key, readonly=False):
         st.markdown(
             f'<div class="verdict {tone}"><div class="stamp">{stamp}</div><div class="vtxt"><div class="who">{esc(inp["name"])} · {esc(inp.get("company"))}</div>'
             f'<div class="why">{esc(run.get("noDraftReason") or meaning)}</div></div></div>', unsafe_allow_html=True)
+        show_alternatives(run)
         return
     d, dec, q = res["draft"], res["decision"], res["quality"]
     sc = (run["stages"]["score"].get("data") or {}).get("scored") or []
@@ -353,6 +372,7 @@ def show_run(run, key, readonly=False):
         st.markdown('<div class="sec">Guardrails · AI judges, code decides</div>', unsafe_allow_html=True)
         rules = "".join(f'<div class="rule {"fired" if r["fired"] else ""}"><span class="rd"></span><div><span class="rn">{esc(r["rule"])}</span><div class="rx">{esc(r["text"])}</div></div></div>' for r in dec["log"])
         st.markdown(f'<div class="card">{rules}</div>', unsafe_allow_html=True)
+        show_alternatives(run)
         return
 
     left, right = st.columns([1.2, 1], gap="large")

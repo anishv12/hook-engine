@@ -989,6 +989,103 @@ def run_pipeline(run, on_update):
         return _fail(run, e, on_update)
 
 
+_WIKI_UA = {"User-Agent": "HookEngineDemo/1.0 (case-study project; contact via repo owner)"}
+
+
+def wiki_key_people(company):
+    """Key people from the company's Wikipedia infobox (free, no key). Returns [{name, role, url}] or []."""
+    try:
+        api = "https://en.wikipedia.org/w/api.php"
+        q = requests.get(api, params={"action": "query", "list": "search", "srsearch": company + " company", "format": "json", "srlimit": 3}, headers=_WIKI_UA, timeout=10).json()
+        toks = {w for w in re.findall(r"[a-z0-9]{4,}", company.lower()) if w not in {"limited", "technologies", "industries", "india", "private", "group"}}
+        title = next((h["title"] for h in q["query"]["search"] if not toks or any(t in h["title"].lower() for t in toks)), None)
+        if not title:
+            return []
+        r = requests.get(api, params={"action": "query", "prop": "revisions", "rvprop": "content", "rvslots": "main", "format": "json", "titles": title}, headers=_WIKI_UA, timeout=10).json()
+        page = next(iter(r["query"]["pages"].values()))
+        text = page["revisions"][0]["slots"]["main"]["*"]
+        m = re.search(r"\|\s*key_people\s*=\s*(.*?)(?=\n\s*\|[a-z_ ]+=|\n\}\})", text, re.S | re.I)
+        if not m:
+            return []
+        raw = m.group(1)
+        raw = re.sub(r"<ref[^>]*>.*?</ref>|<ref[^>]*/>|<!--.*?-->", "", raw, flags=re.S)
+        raw = re.sub(r"\{\{(?:plainlist|flatlist|unbulleted list|ubl|hlist)\s*\|?", "", raw, flags=re.I).replace("}}", "")
+        raw = re.sub(r"\[\[(?:[^\]|]*\|)?([^\]]*)\]\]", r"\1", raw)
+        raw = re.sub(r"<br\s*/?>\s*(?=\()", " ", raw, flags=re.I)
+        raw = re.sub(r"<br\s*/?>|\n\s*[*|]|\|", "\n", raw, flags=re.I)
+        out = []
+        for ln in raw.split("\n"):
+            ln = re.sub(r"\{\{[^}]*\}\}|'{2,3}", "", ln).strip(" *|;,")
+            mm = re.match(r"^([A-Z][A-Za-z.\-' ]{3,40}?)\s*\(([^)]{2,60})\)", ln)
+            if mm:
+                out.append({"name": mm.group(1).strip(), "role": mm.group(2).strip(), "url": "https://en.wikipedia.org/wiki/" + title.replace(" ", "_")})
+        return out
+    except Exception:
+        return []
+
+
+def suggest_contacts(inp, limit=4):
+    """When we stop without a draft: other senior people at the same company, taken only from news headlines (never invented).
+    One search sweep for finance/leadership news, then one cheap AI call to read names and roles out of the headlines."""
+    from concurrent.futures import ThreadPoolExecutor
+    company = (inp.get("company") or "").strip()
+    if not company:
+        return []
+    wiki = wiki_key_people(company)
+    qs = [f'{company} CFO OR "chief financial officer" OR "head of finance" OR controller',
+          f"{company} appoints OR names OR appointed vice president OR head finance OR accounts OR treasury",
+          f"{company} CEO OR COO OR founder OR managing director"]
+    jobs = []
+    for q in qs:
+        jobs.append((f"https://news.google.com/rss/search?q={quote_plus(q + ' when:1y')}&hl=en-IN&gl=IN&ceid=IN:en", "google"))
+        jobs.append((f"https://www.bing.com/news/search?q={quote_plus(q)}&format=rss&mkt=en-IN", "bing"))
+    with ThreadPoolExecutor(max_workers=6) as ex:
+        results = list(ex.map(lambda j: _rss(j[0], j[1])[:10], jobs))
+    stop = {"limited", "technologies", "technology", "industries", "india", "private", "pvt", "ltd", "group", "services", "company"}
+    toks = {w for w in re.findall(r"[a-z0-9]{4,}", company.lower()) if w not in stop}
+    items, seen = [], set()
+    for got in results:
+        for it in got:
+            k = re.sub(r"\W+", "", it["title"].lower())[:60]
+            if not it["title"] or k in seen or (toks and not any(t in (it["title"] + " " + it["snippet"]).lower() for t in toks)):
+                continue
+            seen.add(k)
+            items.append(it)
+    items.sort(key=lambda x: (x["date"] or "", x["title"]), reverse=True)
+    items = items[:16]
+    me = (re.findall(r"[a-z]{3,}", (inp.get("name") or "").lower()) or [""])[-1]
+    wiki_out = [{"name": w["name"], "role": w["role"], "headline": "Listed as key person on Wikipedia", "url": w["url"], "date": None, "source": "Wikipedia"}
+                for w in wiki if re.findall(r"[A-Za-z]{3,}", w["name"]) and re.findall(r"[A-Za-z]{3,}", w["name"])[-1].lower() != me]
+    if not items:
+        return wiki_out[:limit]
+    lines = "\n".join(f"[{i}] {it['title']} ({it['date'] or 'undated'}) {it['snippet'][:140]}" for i, it in enumerate(items))
+    prompt = (f"These are news headlines about {company}. List up to 6 real people named in them who currently hold a senior role at {company} (finance, operations, "
+              f"accounts, treasury, or the CEO/COO/founder). Exclude {inp['name']}. Only use names and roles written in the headline text; never guess. "
+              'Reply with only JSON: [{"name":"","role":"","id":0}] where id is the headline number. Return [] if there are none.\n\n' + lines)
+    try:
+        got = ai_json(prompt, tier="quick", temperature=0)
+    except Exception:
+        return wiki_out[:limit]
+    got = got if isinstance(got, list) else (got.get("people") if isinstance(got, dict) else []) or []
+    out, names = [], {w["name"].lower() for w in wiki_out}
+    for g in got:
+        try:
+            name, role, i = str(g["name"]).strip(), str(g.get("role") or "").strip(), int(g["id"])
+            it = items[i]
+        except Exception:
+            continue
+        parts = re.findall(r"[A-Za-z]{3,}", name)
+        hay = (it["title"] + " " + it["snippet"]).lower()
+        if not parts or parts[-1].lower() not in hay or (me and parts[-1].lower() == me) or name.lower() in names:
+            continue
+        names.add(name.lower())
+        out.append({"name": name, "role": role, "headline": it["title"][:140], "url": it["url"], "date": it["date"], "source": it["publisher"]})
+    fin = re.compile(r"financ|cfo|account|treasur|control|audit|operations|coo", re.I)
+    out = wiki_out + out
+    out.sort(key=lambda x: (0 if fin.search(x["role"]) else 1))
+    return out[:limit]
+
+
 def stop_without_draft(run, status, message, on_update, decision=None, slim=None):
     """Research was inadequate: skip the remaining stages and produce NO email."""
     for sid in ("score", "rules", "draft", "quality", "review"):
@@ -996,6 +1093,10 @@ def stop_without_draft(run, status, message, on_update, decision=None, slim=None
         if st["status"] in ("pending", "running"):
             st["status"] = "skipped"
     run["noDraftReason"] = message
+    try:
+        run["alternatives"] = suggest_contacts(run["input"])
+    except Exception:
+        run["alternatives"] = []
     run["result"] = {"draft": None, "quality": None, "decision": decision, "choice": slim, "target": (decision or {}).get("target") or run["input"], "status": status} if decision else None
     run["status"] = status
     on_update(run)
