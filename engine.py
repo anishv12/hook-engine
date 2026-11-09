@@ -508,6 +508,35 @@ def analyze_prompt(inp, signals, profile, seller):
     return "\n".join(L)
 
 
+def paragraphise(body):
+    """Make sure the email reads as short paragraphs: greeting, up to 2 sentences each, a closing line, sign-off."""
+    b = (body or "").replace("\r", "").strip()
+    sign = ""
+    m = re.search(r"\n\s*(warm regards|kind regards|regards|sincerely)\s*,?\s*\n", b, re.I)
+    if m:
+        sign, b = b[m.start():].strip(), b[:m.start()].strip()
+    paras = [x.strip() for x in re.split(r"\n\s*\n", b) if x.strip()]
+    if len(paras) >= 3:
+        out = paras
+    else:
+        flat = " ".join(b.split())
+        greet = ""
+        g = re.match(r"^(dear [^,\n]{1,40},)\s*", flat, re.I)
+        if g:
+            greet, flat = g.group(1), flat[g.end():]
+        sents = re.split(r"(?<=[.?!])\s+(?=[A-Z0-9₹$])", flat)
+        out = [greet] if greet else []
+        if len(sents) >= 3:
+            last = sents[-1]
+            rest = sents[:-1]
+            half = (len(rest) + 1) // 2
+            out += [" ".join(rest[:half]), " ".join(rest[half:]), last] if rest[half:] else [" ".join(rest), last]
+        else:
+            out += [" ".join(sents)]
+    text = "\n\n".join(x for x in out if x)
+    return text + ("\n\n" + re.sub(r"\s*\n\s*", "\n", sign) if sign else "")
+
+
 def draft_prompt(seller, target, decision, choice, scored, critique=""):
     hook = choice["hook"]
     allowed = [s for s in scored if s["eligible"]]
@@ -542,6 +571,7 @@ def draft_prompt(seller, target, decision, choice, scored, critique=""):
         f"PROSPECT: {target['name']}, {target.get('role')} at {target.get('company') or 'their company'}. Greet them by this exact first name: {first}.", task, "",
         "OTHER FACTS YOU MAY USE:", "\n".join(f"[{s['id']}] {s['title']}" for s in allowed) or "(none)", "", "HOW TO WRITE IT",
         f"- Body {words} words. Plain text, no bullets, no exclamation marks, no emojis. Short paragraphs, 2-3 sentences at most.",
+        "- LAYOUT: short paragraphs separated by a blank line (use \n\n inside the JSON body string). Greeting on its own line; paragraph 1 = what you noticed (1-2 sentences); paragraph 2 = what Zamp could take off their plate (1-2 sentences); paragraph 3 = the courteous close (1 sentence); then the sign-off. Never one block of text.",
         "- Shape: open with 'Dear {first},' on its own line. Then (1) one sentence on the specific thing you noticed about them, with the concrete detail (a number, a name, a deal); (2) one or two sentences on what Zamp could take off their plate because of it, using one approved idea in plain, professional words; (3) one courteous question as the close. Finish with 'Warm regards,' and then the sender's first name on its own line.",
         "- Voice: formal, courteous and respectful, the way a thoughtful professional writes to a senior executive they have not met. Complete sentences, no contractions, no slang, no casual shortcuts. Polite phrasing such as 'I would be grateful for', 'would you be open to', 'at your convenience', 'I appreciate you may be busy'. Still be specific and concise; never gushing, never pushy.",
         "- BANNED words and phrases: 'I hope this finds you well', 'reaching out', 'I wanted to', 'Given that', 'likely', 'significant', 'streamline', 'leverage', 'unlock', 'robust', 'journey', 'navigate', 'pressure to', 'in today's', 'AI-powered', 'cutting-edge', 'game-changer', 'map one process', and the stock line 'AI employees that execute end-to-end'.",
@@ -996,6 +1026,7 @@ def finish_pipeline(run, on_update):
         sender = run["seller"]["sender"]
         if draft["body"].strip() and not draft["body"].rstrip().endswith(sender):
             draft["body"] = draft["body"].rstrip() + "\n\nWarm regards,\n" + sender
+        draft["body"] = paragraphise(draft["body"])
         setst("draft", status="done", data={"attempt": attempt, "draft": draft})
         setst("quality", status="running")
         text = draft["subject"] + " " + draft["body"]
