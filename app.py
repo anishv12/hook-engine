@@ -493,8 +493,10 @@ tab_new, tab_dash = st.tabs(["New run", "Dashboard"])
 
 # ---------------------------------------------------------------- new run
 with tab_new:
-    for k in ("f_name", "f_company", "f_role", "f_notes", "f_linkedin"):
-        st.session_state.setdefault(k, "")
+    DEFAULTS = {"f_name": "Ankit Aggarwal", "f_company": "Unstop", "f_role": "CEO",
+                "f_notes": "Met at Shaastra, IIT Madras was interested to take things forward", "f_linkedin": ""}
+    for k, v in DEFAULTS.items():  # prefilled so a first-time visitor can just press Run
+        st.session_state.setdefault(k, v)
 
     mode_single = st.radio("Mode", ["One prospect", "A list (Excel / CSV)"], horizontal=True, label_visibility="collapsed", key="mode_sel")
     if mode_single == "One prospect":
